@@ -1,4 +1,4 @@
-# BoundedCart Execution Checklist
+# NiyamCart Execution Checklist
 
 This is the operational tracker. A phase is not complete until every exit-gate item is checked.
 
@@ -135,16 +135,16 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 10 - Repository and submission
 
-- [ ] README opens with problem, thesis, and concise reuse disclosure.
-- [ ] `ADAPTATION.md` accurately identifies reused and new work.
-- [ ] `docs/architecture.md` exists and matches implementation.
-- [ ] Architecture diagram shows probabilistic/deterministic trust boundary.
-- [ ] Setup works on a clean machine.
+- [x] README opens with problem, thesis, and concise reuse disclosure.
+- [x] `ADAPTATION.md` accurately identifies reused and new work.
+- [x] `docs/architecture.md` exists and matches implementation.
+- [x] Architecture diagram shows probabilistic/deterministic trust boundary.
+- [x] Setup works on a clean machine.
 - [ ] CI is green.
-- [ ] Repository contains no secrets or personal data.
-- [ ] Repository contains no broken links.
-- [ ] Evaluation report is committed.
-- [ ] Limitations are explicit.
+- [x] Repository contains no secrets or personal data.
+- [x] Repository contains no broken links.
+- [x] Evaluation report is committed.
+- [x] Limitations are explicit.
 - [ ] Five-minute video is recorded and accessible.
 - [ ] Demo has been rehearsed three times under five minutes.
 - [ ] Submission form is reviewed before final submission.
@@ -152,13 +152,13 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 ## Final acceptance checklist
 
 - [ ] One natural-language buyer request reaches one verified Razorpay test payment.
-- [ ] The agent selects tools dynamically and reacts to typed results.
-- [ ] The agent cannot cause a financial side effect.
-- [ ] Every rupee is represented as integer paise.
-- [ ] The buyer approves the exact cart that becomes the order.
-- [ ] Payment truth is independently reconciled.
-- [ ] Duplicate requests cannot create duplicate orders.
-- [ ] One unsafe request is refused with a real policy reason.
-- [ ] One provider failure is handled without fabrication.
-- [ ] Audit records reproduce the workflow without relying on an LLM explanation.
-- [ ] Metrics are calculated on held-out tasks and limitations are stated honestly.
+- [x] The agent selects tools dynamically and reacts to typed results.
+- [x] The agent cannot cause a financial side effect.
+- [x] Every rupee is represented as integer paise.
+- [x] The buyer approves the exact cart that becomes the order.
+- [x] Payment truth is independently reconciled.
+- [x] Duplicate requests cannot create duplicate orders.
+- [x] One unsafe request is refused with a real policy reason.
+- [x] One provider failure is handled without fabrication.
+- [x] Audit records reproduce the workflow without relying on an LLM explanation.
+- [x] Metrics are calculated on held-out tasks and limitations are stated honestly.
