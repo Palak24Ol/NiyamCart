@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from .audit import append_audit
 from .commerce_models import Cart, CartCompatibilityClaim, CartItem, Order, PaymentEvent
 from .commerce_schemas import CreateCartRequest, CreateOrderRequest
 from .compatibility import complement_product_ids, products_by_category
@@ -112,6 +113,28 @@ def create_cart(session: Session, request: CreateCartRequest) -> Cart:
         )
     cart.total_paise = cart.subtotal_paise
     session.add(cart)
+    append_audit(
+        session,
+        "cart",
+        cart.id,
+        "cart_proposed",
+        {
+            "currency": cart.currency,
+            "total_paise": cart.total_paise,
+            "items": [
+                {"product_id": item.product_id, "quantity": item.quantity}
+                for item in cart.items
+            ],
+            "compatibility_claims": [
+                {
+                    "primary_product_id": claim.primary_product_id,
+                    "addon_product_id": claim.addon_product_id,
+                    "rule_id": claim.rule_id,
+                }
+                for claim in cart.compatibility_claims
+            ],
+        },
+    )
     session.commit()
     return load_cart(session, cart.id)
 
@@ -159,6 +182,13 @@ def _invalidate_if_changed(session: Session, cart: Cart) -> None:
     error = _cart_validation_error(session, cart)
     if error is not None:
         cart.status = "invalidated"
+        append_audit(
+            session,
+            "cart",
+            cart.id,
+            "cart_invalidated",
+            {"error": error.code, "message": error.message},
+        )
         session.commit()
         raise error
 
@@ -167,6 +197,13 @@ def _invalidate_if_hash_changed(session: Session, cart: Cart) -> None:
     recalculated = hashlib.sha256(canonical_cart(cart)).hexdigest()
     if not cart.cart_hash or recalculated != cart.cart_hash:
         cart.status = "invalidated"
+        append_audit(
+            session,
+            "cart",
+            cart.id,
+            "cart_invalidated",
+            {"error": "CART_MUTATED", "recalculated_hash": recalculated},
+        )
         session.commit()
         raise CommerceError(
             409,
@@ -222,6 +259,17 @@ def freeze_cart(session: Session, cart_id: str, now: datetime | None = None) -> 
     cart.status = "frozen"
     cart.frozen_at = now
     cart.expires_at = now + FREEZE_DURATION
+    append_audit(
+        session,
+        "cart",
+        cart.id,
+        "cart_frozen",
+        {
+            "cart_hash": cart.cart_hash,
+            "total_paise": cart.total_paise,
+            "expires_at": cart.expires_at.isoformat(),
+        },
+    )
     session.commit()
     return load_cart(session, cart.id)
 
@@ -238,6 +286,7 @@ def approve_cart(
         raise CommerceError(409, "INVALID_CART_STATE", f"Cannot approve a {cart.status} cart")
     if not cart.expires_at or cart.expires_at <= now:
         cart.status = "expired"
+        append_audit(session, "cart", cart.id, "cart_expired", {})
         session.commit()
         raise CommerceError(409, "CART_EXPIRED", "The frozen cart expired; review it again")
     _invalidate_if_changed(session, cart)
@@ -247,6 +296,13 @@ def approve_cart(
 
     cart.status = "approved"
     cart.approved_at = now
+    append_audit(
+        session,
+        "cart",
+        cart.id,
+        "cart_approved",
+        {"cart_hash": cart.cart_hash, "approved_at": now.isoformat()},
+    )
     session.commit()
     return load_cart(session, cart.id)
 
@@ -272,6 +328,7 @@ def create_order(
         raise CommerceError(409, "INVALID_CART_STATE", f"Cannot order a {cart.status} cart")
     if not cart.expires_at or cart.expires_at <= now:
         cart.status = "expired"
+        append_audit(session, "cart", cart.id, "cart_expired", {})
         session.commit()
         raise CommerceError(409, "CART_EXPIRED", "The approved cart expired")
     if not cart.cart_hash or cart.cart_hash != request.cart_hash:
@@ -307,6 +364,26 @@ def create_order(
         cart_hash=cart.cart_hash,
     )
     session.add(order)
+    append_audit(
+        session,
+        "cart",
+        cart.id,
+        "order_claimed",
+        {"order_id": order.id, "cart_hash": order.cart_hash},
+    )
+    append_audit(
+        session,
+        "order",
+        order.id,
+        "order_created",
+        {
+            "cart_id": order.cart_id,
+            "cart_hash": order.cart_hash,
+            "currency": order.currency,
+            "total_paise": order.total_paise,
+            "status": order.status,
+        },
+    )
     try:
         session.commit()
     except IntegrityError:
@@ -329,6 +406,13 @@ def bind_provider_order(session: Session, order_id: str, provider_order_id: str)
     if order.provider_order_id and order.provider_order_id != provider_order_id:
         raise CommerceError(409, "PROVIDER_ORDER_MISMATCH", "Provider order is already bound")
     order.provider_order_id = provider_order_id
+    append_audit(
+        session,
+        "order",
+        order.id,
+        "provider_order_bound",
+        {"provider_order_id": provider_order_id},
+    )
     session.commit()
     return order
 
@@ -400,6 +484,24 @@ def finalise_payment(
         payload_hash=payload_hash,
     )
     session.add(event)
+    append_audit(
+        session,
+        "order",
+        order.id,
+        "payment_evidence_evaluated",
+        {
+            "provider_event_id": evidence.provider_event_id,
+            "event_type": evidence.event_type,
+            "provider_order_id": evidence.provider_order_id,
+            "provider_payment_id": evidence.provider_payment_id,
+            "amount_paise": evidence.amount_paise,
+            "currency": evidence.currency,
+            "captured": evidence.captured,
+            "accepted": accepted,
+            "reason": reason,
+            "resulting_status": "paid" if accepted else order.status,
+        },
+    )
     try:
         session.commit()
     except IntegrityError:

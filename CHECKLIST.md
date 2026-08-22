@@ -96,16 +96,16 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 7 - Frontend and audit
 
-- [ ] Add buyer-agent panel to reused frontend.
-- [ ] Show tool activity without exposing hidden reasoning.
-- [ ] Show grounded product recommendations.
-- [ ] Show policy refusal and rule ID.
-- [ ] Show frozen cart and exact approval.
-- [ ] Show checkout and verified payment state.
-- [ ] Show sequenced audit timeline.
-- [ ] Add audit verification endpoint.
-- [ ] Redact secrets and sensitive values.
-- [ ] Add accessible loading, error, and degraded states.
+- [x] Add buyer-agent panel to reused frontend.
+- [x] Show tool activity without exposing hidden reasoning.
+- [x] Show grounded product recommendations.
+- [x] Show policy refusal and rule ID.
+- [x] Show frozen cart and exact approval.
+- [x] Show checkout and verified payment state.
+- [x] Show sequenced audit timeline.
+- [x] Add audit verification endpoint.
+- [x] Redact secrets and sensitive values.
+- [x] Add accessible loading, error, and degraded states.
 
 ## Phase 8 - Evaluation and reliability
 

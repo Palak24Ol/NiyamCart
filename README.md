@@ -12,7 +12,7 @@ The clean frontend/backend foundation is implemented with:
 - 500 locally hosted, compressed primary product images.
 - Integer-paise product data and Indian currency formatting.
 - Interactive cart with quantities and totals.
-- Niyam assistant panel with explained recommendations.
+- Live Niyam assistant panel with explained, catalogue-grounded recommendations.
 - Proposed-cart handoff and a visible human-approval boundary.
 - Responsive desktop and mobile layouts.
 - FastAPI health and catalogue endpoints backed by SQLAlchemy.
@@ -27,12 +27,13 @@ The clean frontend/backend foundation is implemented with:
 - Standard Checkout with a separate human approval action and server-side signature verification.
 - Callback and raw-body-verified webhook reconciliation through one payment finaliser.
 - Bounded OpenAI Responses tool loop with six strict merchant tools.
-- Durable, sequenced audit events for user messages, model outputs, tool calls, and results.
+- Redacted, hash-chained audit events with server-side tamper verification.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
 
-The current frontend panel still uses its demonstration response; connecting it to the completed
-backend agent API is part of the dedicated frontend-and-audit phase.
+The frontend calls the bounded agent API directly. It shows typed tool activity, grounded product
+evidence, policy rule IDs, safe degraded states, and audit verification without exposing hidden
+model reasoning.
 
 ## Run locally
 
@@ -94,6 +95,8 @@ Both well-known endpoints support conditional requests through `If-None-Match` a
 - `POST /api/agent/sessions` runs a new request through at most eight model turns.
 - `POST /api/agent/sessions/{id}/messages` allows at most two buyer revisions.
 - `GET /api/agent/sessions/{id}/events` returns the reproducible public audit timeline.
+- `GET /api/audit/{scope}/{id}` recomputes and verifies the hash chain for an agent session, cart,
+  or order.
 
 Set `OPENAI_API_KEY` to use the live Responses API. The default model is
 `gpt-5.6-luna` at low reasoning effort. Without a key—or during a provider failure—the endpoint
@@ -107,6 +110,7 @@ payment are intentionally absent.
 ## Verify
 
 ```bash
+npm run lint
 npm run typecheck
 npm run build
 npm audit --omit=dev

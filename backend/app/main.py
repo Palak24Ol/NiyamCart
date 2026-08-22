@@ -13,6 +13,7 @@ from .agent_contracts import build_agent_catalog, build_agent_policy, payload_et
 from .agent_models import AgentSession
 from .agent_schemas import AgentAuditResponse, AgentRunRequest, AgentRunResponse
 from .agent_service import AgentConfig, load_agent_session, run_agent
+from .audit import AuditVerificationResponse, verify_audit
 from .catalog import seed_catalog
 from .commerce import CommerceError, approve_cart, create_cart, create_order, freeze_cart, load_cart
 from .commerce_models import Order
@@ -256,6 +257,23 @@ def create_app(
             estimated_cost_microusd=agent_session.estimated_cost_microusd,
             events=agent_session.events,
         )
+
+    @app.get(
+        "/api/audit/{scope_type}/{scope_id}",
+        response_model=AuditVerificationResponse,
+        tags=["audit"],
+    )
+    def verify_audit_route(
+        scope_type: str,
+        scope_id: str,
+        session: SessionDependency,
+    ) -> AuditVerificationResponse:
+        if scope_type not in {"agent_session", "cart", "order"}:
+            raise HTTPException(status_code=404, detail="Unknown audit scope")
+        result = verify_audit(session, scope_type, scope_id)
+        if result.event_count == 0:
+            raise HTTPException(status_code=404, detail="Audit trail not found")
+        return result
 
     return app
 

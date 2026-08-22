@@ -6,6 +6,9 @@ import {
   Check,
   ChevronDown,
   CircleHelp,
+  CircleCheckBig,
+  CircleX,
+  LoaderCircle,
   Minus,
   Plus,
   Search,
@@ -15,10 +18,21 @@ import {
   Star,
   Trash2,
   UserRound,
+  Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { formatMoney, products, type Product } from "@/lib/catalog";
+import {
+  getAgentAudit,
+  getProposedCart,
+  getVerifiedAudit,
+  groundedProducts,
+  runAgent,
+  type AgentAudit,
+  type AgentRun,
+  type VerifiedAudit,
+} from "@/lib/agent";
 import {
   approveAndOpenCheckout,
   prepareCartForApproval,
@@ -29,7 +43,7 @@ type Cart = Record<string, number>;
 
 const suggestions = [
   "Build a festive outfit under ₹1,500",
-  "Find skincare under ₹500",
+  "Find a face serum under ₹500",
   "Compare office-ready looks",
 ];
 
@@ -41,6 +55,11 @@ export function NiyamCartApp() {
   const [agentOpen, setAgentOpen] = useState(true);
   const [agentQuery, setAgentQuery] = useState("");
   const [agentAnswer, setAgentAnswer] = useState<string | null>(null);
+  const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
+  const [agentAudit, setAgentAudit] = useState<AgentAudit | null>(null);
+  const [verifiedAudit, setVerifiedAudit] = useState<VerifiedAudit | null>(null);
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentError, setAgentError] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
 
   const categories = ["All", ...Array.from(new Set(products.map((item) => item.category)))];
@@ -73,13 +92,48 @@ export function NiyamCartApp() {
     });
   };
 
-  const askAgent = (prompt = agentQuery) => {
+  const askAgent = async (prompt = agentQuery) => {
     if (!prompt.trim()) return;
     setAgentQuery(prompt);
-    setAgentAnswer(
-      "I found a coordinated festive pairing under your ₹1,500 limit: the Maroon Floral Cotton Kurta and Berry Pearl Drop Earrings. Together they cost ₹478, leaving plenty of room in your budget. I chose them for their complementary style, strong ratings and in-stock availability.",
-    );
+    setAgentLoading(true);
+    setAgentError(null);
+    setAgentAnswer(null);
+    setAgentRun(null);
+    setAgentAudit(null);
+    setVerifiedAudit(null);
+    try {
+      const result = await runAgent(prompt.trim());
+      setAgentRun(result);
+      setAgentAnswer(result.answer);
+      const [events, audit] = await Promise.all([
+        getAgentAudit(result.session_id),
+        getVerifiedAudit(result.session_id),
+      ]);
+      setAgentAudit(events);
+      setVerifiedAudit(audit);
+    } catch (error) {
+      setAgentError(error instanceof Error ? error.message : "Niyam is temporarily unavailable.");
+    } finally {
+      setAgentLoading(false);
+    }
   };
+
+  const reviewAgentCart = async () => {
+    if (!agentRun?.proposed_cart_id) return;
+    setAgentError(null);
+    try {
+      const proposed = await getProposedCart(agentRun.proposed_cart_id);
+      setCart(Object.fromEntries(proposed.items.map((item) => [item.product_id, item.quantity])));
+      setCartOpen(true);
+    } catch (error) {
+      setAgentError(error instanceof Error ? error.message : "The proposed cart is unavailable.");
+    }
+  };
+
+  const recommendations = groundedProducts(agentAudit?.events || []);
+  const visibleAgentEvents = (agentAudit?.events || []).filter(
+    (event) => event.event_type !== "model_response" && event.event_type !== "user_message",
+  );
 
   return (
     <div className="app-shell">
@@ -189,28 +243,33 @@ export function NiyamCartApp() {
       {agentOpen && (
         <aside className="agent-panel" id="agent" aria-label="Niyam AI assistant">
           <div className="panel-header">
-            <div className="agent-identity"><span><Bot size={20} /></span><div><b>Niyam</b><small><i /> Ready to help</small></div></div>
+            <div className="agent-identity"><span><Bot size={20} /></span><div><b>Niyam</b><small><i /> {agentLoading ? "Working within your rules" : "Ready to help"}</small></div></div>
             <button onClick={() => setAgentOpen(false)} aria-label="Close assistant"><X size={19} /></button>
           </div>
           <div className="agent-body">
             <div className="assistant-message"><b>Hi, I’m Niyam.</b><p>Tell me what you’re shopping for, your budget and what matters most. I’ll explain every choice.</p></div>
-            {!agentAnswer && <div className="quick-prompts">{suggestions.map((item) => <button onClick={() => askAgent(item)} key={item}>{item}<ArrowRight size={14} /></button>)}</div>}
+            {!agentAnswer && !agentLoading && <div className="quick-prompts">{suggestions.map((item) => <button onClick={() => void askAgent(item)} key={item}>{item}<ArrowRight size={14} /></button>)}</div>}
+            {agentLoading && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>Checking the live catalogue</b><small>Niyam may use bounded tools, but cannot order or pay.</small></div></div>}
+            {agentError && <div className="agent-state error-state" role="alert"><CircleX size={18} /><div><b>Request not completed</b><small>{agentError}</small></div></div>}
             {agentAnswer && (
               <>
                 <div className="user-message">{agentQuery}</div>
-                <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> EXPLAINED RECOMMENDATION</span><p>{agentAnswer}</p><button className="inline-action" onClick={() => { setCart({ "P-001": 1, "P-351": 1 }); setCartOpen(true); }}>Review proposed cart <ArrowRight size={15} /></button></div>
+                {agentRun?.status === "degraded" && <div className="agent-state degraded-state" role="status"><ShieldCheck size={18} /><div><b>Safe fallback used</b><small>The AI provider was unavailable. Results below came from deterministic catalogue search.</small></div></div>}
+                <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> GROUNDED RESPONSE</span><p>{agentAnswer}</p>{agentRun?.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart()}>Review proposed cart <ArrowRight size={15} /></button>}</div>
+                {!!recommendations.length && <div className="grounded-results" aria-label="Products returned by catalogue tools"><b>Catalogue evidence</b>{recommendations.map((item) => <div key={item.product_id}><span><strong>{item.name}</strong><small>{item.product_id} · {item.stock} in stock</small></span><b>{formatMoney(item.price_paise)}</b></div>)}</div>}
+                {!!visibleAgentEvents.length && <details className="audit-timeline" open><summary><span><Wrench size={14} /> Tool activity & audit</span>{verifiedAudit?.valid ? <em className="verified"><CircleCheckBig size={13} /> Verified</em> : <em className="unverified"><CircleX size={13} /> Unverified</em>}</summary><ol>{visibleAgentEvents.map((event) => <li key={event.sequence}><span>{event.sequence}</span><div><b>{event.tool_name || event.event_type.replaceAll("_", " ")}</b><small>{event.event_type === "tool_call" ? "Bounded tool requested" : event.event_type === "tool_result" ? "Typed result recorded" : event.event_type === "policy_decision" ? String(event.payload.rule_id || "Policy evaluated") : event.event_type === "final_answer" ? "Response completed" : "Event recorded"}</small></div></li>)}</ol>{verifiedAudit && <code title={verifiedAudit.root_hash}>Root {verifiedAudit.root_hash}</code>}<p>Only actions and typed results are shown. Hidden model reasoning is never exposed.</p></details>}
               </>
             )}
           </div>
           <div className="agent-input">
-            <input value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && askAgent()} placeholder="Describe what you need…" />
-            <button onClick={() => askAgent()} aria-label="Send"><ArrowRight size={18} /></button>
+            <input value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !agentLoading && void askAgent()} placeholder="Describe what you need…" disabled={agentLoading} aria-label="Shopping request" />
+            <button onClick={() => void askAgent()} aria-label="Send" disabled={agentLoading || !agentQuery.trim()}>{agentLoading ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}</button>
           </div>
           <div className="panel-safety"><ShieldCheck size={13} /> Niyam cannot purchase without your approval</div>
         </aside>
       )}
 
-      {cartOpen && <CartDrawer lines={cartLines} subtotal={subtotal} updateCart={updateCart} close={() => setCartOpen(false)} />}
+      {cartOpen && <CartDrawer key={cartLines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|")} lines={cartLines} subtotal={subtotal} updateCart={updateCart} close={() => setCartOpen(false)} />}
     </div>
   );
 }
@@ -247,14 +306,6 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
     "idle" | "locking" | "ready" | "opening" | "paid"
   >("idle");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const lineSignature = lines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|");
-
-  useEffect(() => {
-    setApproval(null);
-    setCheckoutState("idle");
-    setCheckoutError(null);
-  }, [lineSignature]);
-
   const lockCart = async () => {
     setCheckoutState("locking");
     setCheckoutError(null);
@@ -318,7 +369,7 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
             </div>
           )}
           {checkoutState === "paid" ? (
-            <div className="payment-success"><Check size={18} /><b>Payment verified by NiyamCart</b></div>
+            <div className="payment-success" role="status" aria-live="polite"><Check size={18} /><b>Payment verified by NiyamCart</b></div>
           ) : approval ? (
             <button className="checkout-button" onClick={approveAndPay} disabled={checkoutState === "opening"}>
               {checkoutState === "opening" ? "Opening secure checkout…" : "Approve exact cart & pay"}
@@ -331,7 +382,7 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
             </button>
           )}
           {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
-          <small className="test-mode">Razorpay test mode · No real money charged</small>
+          <small className="test-mode" aria-live="polite">Razorpay test mode · No real money charged</small>
         </div>}
       </aside>
     </div>

@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session, selectinload
 from .agent_models import AgentEvent, AgentSession
 from .agent_schemas import AgentRunResponse, SearchCatalogArgs
 from .agent_tools import TOOL_DEFINITIONS, ToolError, execute_tool, search_catalog
+from .audit import append_audit, redact
+from .policy import PolicyEvaluationRequest, evaluate_policy
 
 SYSTEM_INSTRUCTIONS = """You are NiyamCart's bounded shopping assistant.
 Use only the six supplied tools to search, inspect, check policy, propose a cart, or escalate.
@@ -122,6 +124,9 @@ def _add_event(
     payload: dict[str, object],
     tool_name: str | None = None,
 ) -> AgentEvent:
+    safe_payload = redact(payload)
+    if not isinstance(safe_payload, dict):
+        safe_payload = {"value": safe_payload}
     sequence = (
         db.scalar(
             select(func.coalesce(func.max(AgentEvent.sequence), 0)).where(
@@ -135,9 +140,16 @@ def _add_event(
         sequence=sequence,
         event_type=event_type,
         tool_name=tool_name,
-        payload=payload,
+        payload=safe_payload,
     )
     db.add(event)
+    append_audit(
+        db,
+        "agent_session",
+        agent_session.id,
+        event_type,
+        {"tool_name": tool_name, **safe_payload},
+    )
     db.commit()
     return event
 
@@ -199,6 +211,22 @@ def _degraded_answer(db: Session, agent_session: AgentSession, message: str) -> 
     return _finish(db, agent_session, "degraded", answer)
 
 
+def _autonomous_payment_request(message: str) -> bool:
+    normalized = " ".join(message.lower().split())
+    financial = any(word in normalized for word in ("pay", "purchase", "checkout", "charge"))
+    autonomous = any(
+        phrase in normalized
+        for phrase in (
+            "without approval",
+            "without asking",
+            "automatically",
+            "autonomously",
+            "on my behalf",
+        )
+    )
+    return financial and autonomous
+
+
 def run_agent(
     db: Session,
     message: str,
@@ -219,6 +247,17 @@ def run_agent(
         db.add(agent_session)
         db.commit()
     _add_event(db, agent_session, "user_message", {"text": message})
+
+    if _autonomous_payment_request(message):
+        decision = evaluate_policy(PolicyEvaluationRequest(action="create_payment"))
+        _add_event(db, agent_session, "policy_decision", decision.model_dump())
+        return _finish(
+            db,
+            agent_session,
+            "completed",
+            f"I can’t make or approve that payment. {decision.rule_id}: "
+            f"{decision.explanation} I can prepare an exact cart for your review instead.",
+        )
 
     if provider is None:
         try:

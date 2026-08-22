@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .audit import append_audit
 from .commerce import PaymentEvidence, finalise_payment
 from .commerce_models import (
     Order,
@@ -201,6 +202,18 @@ def create_razorpay_checkout(
         cart_hash=order.cart_hash,
     )
     db.add(checkout)
+    append_audit(
+        db,
+        "order",
+        order.id,
+        "checkout_creation_started",
+        {
+            "amount_paise": checkout.amount_paise,
+            "currency": checkout.currency,
+            "receipt": checkout.receipt,
+            "cart_hash": checkout.cart_hash,
+        },
+    )
     try:
         db.commit()
     except IntegrityError:
@@ -242,12 +255,32 @@ def create_razorpay_checkout(
     except RazorpayError as error:
         checkout.state = "failed"
         checkout.failure_code = error.code
+        append_audit(
+            db,
+            "order",
+            order.id,
+            "checkout_creation_failed",
+            {"error": error.code},
+        )
         db.commit()
         raise
 
     checkout.provider_order_id = provider_order_id
     checkout.state = "ready"
     order.provider_order_id = provider_order_id
+    append_audit(
+        db,
+        "order",
+        order.id,
+        "checkout_ready",
+        {
+            "provider_order_id": provider_order_id,
+            "receipt": checkout.receipt,
+            "amount_paise": checkout.amount_paise,
+            "currency": checkout.currency,
+            "cart_hash": checkout.cart_hash,
+        },
+    )
     db.commit()
     return _checkout_response(checkout, gateway)
 
