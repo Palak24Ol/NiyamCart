@@ -202,6 +202,15 @@ a { color: inherit; text-decoration: none; }
 .cart-summary .payment-success { margin: 13px 0; padding: 13px; border-radius: 10px; background: var(--mint); color: var(--green-dark); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .checkout-error { margin: 10px 0 0; color: #a13c32; font-size: 11px; line-height: 1.4; }
 .test-mode { margin-top: 9px; color: #87918c; display: block; text-align: center; font-size: 10px; }
+.cart-summary .whatsapp-box { margin: 12px 0; padding: 11px; border: 1px solid #dce4de; border-radius: 10px; background: #fafcf9; display: grid; gap: 9px; }
+.whatsapp-box label { display: flex; gap: 8px; align-items: start; cursor: pointer; }
+.whatsapp-box label input { margin-top: 3px; accent-color: var(--green); }
+.whatsapp-box label span { display: flex; flex-direction: column; gap: 2px; }
+.whatsapp-box label b { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.whatsapp-box label small, .handoff-result small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.whatsapp-box > button, .handoff-result button { width: fit-content; border: 1px solid #bcd1c4; border-radius: 7px; background: white; color: var(--green-dark); padding: 7px 9px; font-size: 10px; font-weight: 700; cursor: pointer; }
+.handoff-result { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.handoff-result button { flex: none; display: flex; align-items: center; gap: 4px; }
 
 @media (max-width: 980px) {
   .desktop-nav { display: none; }
@@ -242,3 +251,16 @@ a { color: inherit; text-decoration: none; }
   html { scroll-behavior: auto; }
   *, *:before, *:after { transition-duration: .01ms !important; }
 }
+.review-page { min-height: 100vh; padding: 40px 18px; display: grid; place-items: center; background: radial-gradient(circle at 80% 10%, rgba(216,242,119,.25), transparent 30%), var(--paper); }
+.review-card { width: min(560px, 100%); padding: 30px; border: 1px solid var(--line); border-radius: 20px; background: white; box-shadow: var(--shadow); }
+.review-card h1 { margin: 13px 0 8px; font: 700 30px "Manrope"; letter-spacing: -1.2px; }
+.review-card > p { color: var(--muted); line-height: 1.55; }
+.review-badge { width: fit-content; padding: 6px 9px; border-radius: 999px; color: var(--green-dark); background: var(--mint); display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; }
+.review-lines { margin: 22px 0 12px; display: grid; gap: 8px; }
+.review-lines > div { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; }
+.review-lines span { display: flex; flex-direction: column; }
+.review-lines small, .review-card > small { color: var(--muted); font-size: 10px; }
+.review-total { padding: 12px 0; display: flex; justify-content: space-between; font-size: 18px; }
+.review-card > code { display: block; overflow: hidden; padding: 9px; border-radius: 7px; background: #eef2ee; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.review-card > small { display: block; margin-top: 7px; }
+.review-card > a { margin-top: 20px; min-height: 44px; border-radius: 9px; color: white; background: var(--green); display: grid; place-items: center; font-weight: 700; }

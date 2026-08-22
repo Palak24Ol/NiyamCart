@@ -122,6 +122,14 @@ See `docs/evaluation-plan.md`, `docs/evaluation-report.md`, and
 python -m scripts.run_evaluation --split heldout --live --output backend/evals/results/live-report.json
 ```
 
+## Optional WhatsApp handoff
+
+The cart can prepare a signed, review-only utility message after explicit opt-in. It is feature
+flagged off by default, idempotent, and cannot approve or pay. A confirmation handoff is gated on
+the backend-verified `paid` state. The current implementation intentionally does not collect a phone
+number or transmit data to an external messaging provider; connecting Twilio requires explicit
+destination-specific authorization and approved Content SIDs. See `docs/whatsapp-handoff.md`.
+
 ## Verify
 
 ```bash

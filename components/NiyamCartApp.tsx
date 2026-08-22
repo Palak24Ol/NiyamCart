@@ -8,7 +8,9 @@ import {
   CircleHelp,
   CircleCheckBig,
   CircleX,
+  Copy,
   LoaderCircle,
+  MessageCircle,
   Minus,
   Plus,
   Search,
@@ -38,6 +40,11 @@ import {
   prepareCartForApproval,
   type ApprovalCart,
 } from "@/lib/checkout";
+import {
+  prepareWhatsAppConfirmation,
+  prepareWhatsAppReview,
+  type WhatsAppHandoff,
+} from "@/lib/whatsapp";
 
 type Cart = Record<string, number>;
 
@@ -306,6 +313,10 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
     "idle" | "locking" | "ready" | "opening" | "paid"
   >("idle");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
+  const [whatsappState, setWhatsappState] = useState<WhatsAppHandoff | null>(null);
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [whatsappError, setWhatsappError] = useState<string | null>(null);
   const lockCart = async () => {
     setCheckoutState("locking");
     setCheckoutError(null);
@@ -326,12 +337,39 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
     setCheckoutState("opening");
     setCheckoutError(null);
     try {
-      await approveAndOpenCheckout(approval);
+      const verified = await approveAndOpenCheckout(approval);
       setCheckoutState("paid");
+      if (whatsappOptIn) {
+        try {
+          const confirmation = await prepareWhatsAppConfirmation(verified.orderId);
+          setWhatsappState(confirmation);
+        } catch (error) {
+          setWhatsappError(
+            error instanceof Error ? error.message : "Confirmation handoff is unavailable.",
+          );
+        }
+      }
     } catch (error) {
       setCheckoutState("ready");
       setCheckoutError(error instanceof Error ? error.message : "Payment was not verified.");
     }
+  };
+
+  const prepareWhatsApp = async () => {
+    if (!approval || !whatsappOptIn) return;
+    setWhatsappLoading(true);
+    setWhatsappError(null);
+    try {
+      setWhatsappState(await prepareWhatsAppReview(approval.id, approval.cart_hash));
+    } catch (error) {
+      setWhatsappError(error instanceof Error ? error.message : "Handoff could not be prepared.");
+    } finally {
+      setWhatsappLoading(false);
+    }
+  };
+
+  const copyHandoff = async () => {
+    if (whatsappState?.share_text) await navigator.clipboard.writeText(whatsappState.share_text);
   };
 
   return (
@@ -366,6 +404,14 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
                     : `${approval.expires_at}Z`,
                 ).toLocaleTimeString()}
               </small>
+            </div>
+          )}
+          {approval && (
+            <div className="whatsapp-box">
+              <label><input type="checkbox" checked={whatsappOptIn} onChange={(event) => { setWhatsappOptIn(event.target.checked); setWhatsappState(null); }} /><span><b><MessageCircle size={15} /> WhatsApp handoff</b><small>Optional. Prepares a review-only message; it never approves or pays.</small></span></label>
+              {whatsappOptIn && !whatsappState && <button onClick={prepareWhatsApp} disabled={whatsappLoading}>{whatsappLoading ? "Preparing…" : "Prepare review message"}</button>}
+              {whatsappState && <div className="handoff-result" role="status"><small>{whatsappState.message}</small>{whatsappState.share_text && <button onClick={copyHandoff}><Copy size={13} /> Copy message</button>}</div>}
+              {whatsappError && <small className="checkout-error" role="alert">{whatsappError}</small>}
             </div>
           )}
           {checkoutState === "paid" ? (

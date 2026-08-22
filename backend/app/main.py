@@ -42,14 +42,27 @@ from .razorpay_service import (
     verify_checkout_payment,
 )
 from .schemas import HealthResponse, ProductListResponse, ProductResponse
+from .whatsapp_schemas import (
+    WhatsAppHandoffResponse,
+    WhatsAppReviewRequest,
+    WhatsAppReviewResponse,
+)
+from .whatsapp_service import (
+    WhatsAppSettings,
+    load_review_cart,
+    prepare_cart_review_handoff,
+    prepare_payment_confirmation_handoff,
+)
 
 
 def create_app(
     database_url: str | None = None,
     razorpay_gateway: RazorpayGateway | None = None,
+    whatsapp_settings: WhatsAppSettings | None = None,
 ) -> FastAPI:
     db = Database(database_url or os.getenv("DATABASE_URL", "sqlite:///./niyamcart.db"))
     gateway = razorpay_gateway if razorpay_gateway is not None else configured_gateway()
+    handoff_settings = whatsapp_settings or WhatsAppSettings.from_env()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -74,6 +87,7 @@ def create_app(
     )
     app.state.db = db
     app.state.razorpay_gateway = gateway
+    app.state.whatsapp_settings = handoff_settings
 
     def get_session() -> Generator[Session, None, None]:
         yield from db.session()
@@ -274,6 +288,51 @@ def create_app(
         if result.event_count == 0:
             raise HTTPException(status_code=404, detail="Audit trail not found")
         return result
+
+    @app.post(
+        "/api/carts/{cart_id}/whatsapp-review",
+        response_model=WhatsAppHandoffResponse,
+        tags=["notifications"],
+    )
+    def prepare_whatsapp_review_route(
+        cart_id: str,
+        request: WhatsAppReviewRequest,
+        session: SessionDependency,
+    ) -> WhatsAppHandoffResponse:
+        return prepare_cart_review_handoff(
+            session,
+            cart_id,
+            request,
+            app.state.whatsapp_settings,
+        )
+
+    @app.get(
+        "/api/notifications/whatsapp/review/{token}",
+        response_model=WhatsAppReviewResponse,
+        tags=["notifications"],
+    )
+    def open_whatsapp_review_route(
+        token: str,
+        session: SessionDependency,
+    ) -> WhatsAppReviewResponse:
+        return WhatsAppReviewResponse(
+            cart=load_review_cart(session, token, app.state.whatsapp_settings)
+        )
+
+    @app.post(
+        "/api/orders/{order_id}/whatsapp-confirmation",
+        response_model=WhatsAppHandoffResponse,
+        tags=["notifications"],
+    )
+    def prepare_whatsapp_confirmation_route(
+        order_id: str,
+        session: SessionDependency,
+    ) -> WhatsAppHandoffResponse:
+        return prepare_payment_confirmation_handoff(
+            session,
+            order_id,
+            app.state.whatsapp_settings,
+        )
 
     return app
 

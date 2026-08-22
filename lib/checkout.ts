@@ -94,7 +94,9 @@ function loadRazorpayCheckout(): Promise<void> {
   });
 }
 
-export async function approveAndOpenCheckout(approval: ApprovalCart): Promise<string> {
+export async function approveAndOpenCheckout(
+  approval: ApprovalCart,
+): Promise<{ status: string; orderId: string }> {
   await api(`/api/carts/${approval.id}/approve`, {
     method: "POST",
     body: JSON.stringify({ cart_hash: approval.cart_hash }),
@@ -141,7 +143,7 @@ export async function approveAndOpenCheckout(approval: ApprovalCart): Promise<st
               razorpay_signature: payment.razorpay_signature,
             }),
           });
-          resolve(verified.status);
+          resolve({ status: verified.status, orderId: order.id });
         } catch (error) {
           reject(error);
         }

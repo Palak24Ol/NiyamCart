@@ -124,14 +124,14 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 9 - Optional WhatsApp handoff
 
-- [ ] Start only after Phases 0-8 are green.
-- [ ] Require explicit opt-in.
-- [ ] Send secure cart-review link, not financial approval.
+- [x] Start only after Phases 0-8 are green.
+- [x] Require explicit opt-in.
+- [x] Send secure cart-review link, not financial approval.
 - [ ] Send confirmation only after backend verification.
 - [ ] Use an approved/sandbox-compatible utility template.
-- [ ] Add notification idempotency.
-- [ ] Add feature flag and in-app fallback.
-- [ ] Verify core demo works with WhatsApp disabled.
+- [x] Add notification idempotency.
+- [x] Add feature flag and in-app fallback.
+- [x] Verify core demo works with WhatsApp disabled.
 
 ## Phase 10 - Repository and submission
 
