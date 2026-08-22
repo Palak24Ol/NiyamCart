@@ -8,8 +8,14 @@ class CartItemInput(BaseModel):
     quantity: int = Field(ge=1, le=10)
 
 
+class CompatibilityClaimInput(BaseModel):
+    primary_product_id: str = Field(min_length=1, max_length=64)
+    addon_product_id: str = Field(min_length=1, max_length=64)
+
+
 class CreateCartRequest(BaseModel):
     items: list[CartItemInput] = Field(min_length=1, max_length=20)
+    compatibility_claims: list[CompatibilityClaimInput] = Field(default_factory=list, max_length=10)
 
     @field_validator("items")
     @classmethod
@@ -18,6 +24,18 @@ class CreateCartRequest(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate product IDs are not allowed")
         return items
+
+    @field_validator("compatibility_claims")
+    @classmethod
+    def unique_compatibility_claims(
+        cls, claims: list[CompatibilityClaimInput]
+    ) -> list[CompatibilityClaimInput]:
+        pairs = [(claim.primary_product_id, claim.addon_product_id) for claim in claims]
+        if len(pairs) != len(set(pairs)):
+            raise ValueError("duplicate compatibility claims are not allowed")
+        if any(primary == addon for primary, addon in pairs):
+            raise ValueError("a product cannot be its own add-on")
+        return claims
 
 
 class CartItemResponse(BaseModel):
@@ -29,6 +47,14 @@ class CartItemResponse(BaseModel):
     quantity: int
     unit_price_paise: int
     line_total_paise: int
+
+
+class CompatibilityClaimResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    primary_product_id: str
+    addon_product_id: str
+    rule_id: str
 
 
 class CartResponse(BaseModel):
@@ -45,6 +71,7 @@ class CartResponse(BaseModel):
     approved_at: datetime | None
     version: int
     items: list[CartItemResponse]
+    compatibility_claims: list[CompatibilityClaimResponse]
 
 
 class ApproveCartRequest(BaseModel):

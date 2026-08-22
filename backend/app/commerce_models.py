@@ -47,6 +47,11 @@ class Cart(Base):
         cascade="all, delete-orphan",
         order_by="CartItem.product_id",
     )
+    compatibility_claims: Mapped[list[CartCompatibilityClaim]] = relationship(
+        back_populates="cart",
+        cascade="all, delete-orphan",
+        order_by="CartCompatibilityClaim.id",
+    )
     order: Mapped[Order | None] = relationship(back_populates="cart", uselist=False)
 
 
@@ -71,6 +76,34 @@ class CartItem(Base):
     line_total_paise: Mapped[int] = mapped_column(Integer, nullable=False)
 
     cart: Mapped[Cart] = relationship(back_populates="items")
+
+
+class CartCompatibilityClaim(Base):
+    __tablename__ = "cart_compatibility_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "cart_id",
+            "primary_product_id",
+            "addon_product_id",
+            name="uq_cart_compatibility_claim",
+        ),
+        CheckConstraint(
+            "primary_product_id <> addon_product_id",
+            name="ck_compatibility_distinct_products",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cart_id: Mapped[str] = mapped_column(
+        ForeignKey("carts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    primary_product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"), nullable=False
+    )
+    addon_product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(80), nullable=False)
+
+    cart: Mapped[Cart] = relationship(back_populates="compatibility_claims")
 
 
 class Order(Base):

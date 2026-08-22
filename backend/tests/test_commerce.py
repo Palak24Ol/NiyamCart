@@ -13,6 +13,7 @@ from app.commerce import (
     create_order,
     finalise_payment,
     freeze_cart,
+    load_cart,
 )
 from app.commerce_schemas import CreateCartRequest, CreateOrderRequest
 from app.database import Base
@@ -143,6 +144,151 @@ def test_price_change_invalidates_approval(tmp_path: Path) -> None:
     assert order.status_code == 409
     assert order.json()["error"] == "CART_CHANGED"
     assert refreshed.json()["status"] == "invalidated"
+
+
+def test_inventory_is_rechecked_before_freeze(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'inventory.db'}")
+    with TestClient(app):
+        with app.state.db.session_factory() as session:
+            cart = create_cart(session, CreateCartRequest.model_validate(proposed_payload()))
+            product = session.get(Product, "P-001")
+            assert product is not None
+            product.stock = 1
+            session.commit()
+
+            with pytest.raises(CommerceError) as caught:
+                freeze_cart(session, cart.id)
+            invalidated = load_cart(session, cart.id)
+
+    assert caught.value.code == "CART_INVENTORY_CHANGED"
+    assert invalidated.status == "invalidated"
+
+
+def test_verified_addon_claim_is_persisted_and_frozen(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'compatible.db'}")
+    with TestClient(app) as client:
+        catalog = client.get("/.well-known/agent-catalog.json").json()
+        primary = next(
+            product for product in catalog["products"] if product["product_id"] == "P-001"
+        )
+        addon_id = primary["compatibility"]["complements"][0]
+        proposed = client.post(
+            "/api/carts",
+            json={
+                "items": [
+                    {"product_id": "P-001", "quantity": 1},
+                    {"product_id": addon_id, "quantity": 1},
+                ],
+                "compatibility_claims": [
+                    {"primary_product_id": "P-001", "addon_product_id": addon_id}
+                ],
+            },
+        )
+        frozen = client.post(f"/api/carts/{proposed.json()['id']}/freeze")
+
+    assert proposed.status_code == 201
+    assert proposed.json()["compatibility_claims"] == [
+        {
+            "primary_product_id": "P-001",
+            "addon_product_id": addon_id,
+            "rule_id": "COMPAT-DETERMINISTIC-COMPLEMENT-V1",
+        }
+    ]
+    assert frozen.status_code == 200
+    assert frozen.json()["status"] == "frozen"
+
+
+def test_unverified_addon_claim_is_rejected(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/carts",
+            json={
+                "items": [
+                    {"product_id": "P-001", "quantity": 1},
+                    {"product_id": "P-002", "quantity": 1},
+                ],
+                "compatibility_claims": [
+                    {"primary_product_id": "P-001", "addon_product_id": "P-002"}
+                ],
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "INCOMPATIBLE_ADDON"
+
+
+def test_compatibility_is_rechecked_before_freeze(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'compatibility-change.db'}")
+    with TestClient(app) as client:
+        catalog = client.get("/.well-known/agent-catalog.json").json()
+        primary = next(
+            product for product in catalog["products"] if product["product_id"] == "P-001"
+        )
+        addon_id = primary["compatibility"]["complements"][0]
+        with app.state.db.session_factory() as session:
+            cart = create_cart(
+                session,
+                CreateCartRequest.model_validate(
+                    {
+                        "items": [
+                            {"product_id": "P-001", "quantity": 1},
+                            {"product_id": addon_id, "quantity": 1},
+                        ],
+                        "compatibility_claims": [
+                            {"primary_product_id": "P-001", "addon_product_id": addon_id}
+                        ],
+                    }
+                ),
+            )
+            addon = session.get(Product, addon_id)
+            assert addon is not None
+            addon.category = "Home & Kitchen"
+            session.commit()
+
+            with pytest.raises(CommerceError) as caught:
+                freeze_cart(session, cart.id)
+
+    assert caught.value.code == "CART_COMPATIBILITY_CHANGED"
+
+
+def test_mutated_frozen_cart_cannot_be_approved(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'mutated.db'}")
+    with TestClient(app):
+        with app.state.db.session_factory() as session:
+            cart = create_cart(session, CreateCartRequest.model_validate(proposed_payload()))
+            frozen = freeze_cart(session, cart.id)
+            frozen.items[0].quantity += 1
+            session.commit()
+
+            with pytest.raises(CommerceError) as caught:
+                approve_cart(session, frozen.id, frozen.cart_hash or "")
+            invalidated = load_cart(session, frozen.id)
+
+    assert caught.value.code == "CART_MUTATED"
+    assert invalidated.status == "invalidated"
+
+
+def test_mutated_approved_cart_cannot_create_order(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'mutated-approved.db'}")
+    with TestClient(app):
+        with app.state.db.session_factory() as session:
+            cart = create_cart(session, CreateCartRequest.model_validate(proposed_payload()))
+            frozen = freeze_cart(session, cart.id)
+            approved = approve_cart(session, frozen.id, frozen.cart_hash or "")
+            approved.total_paise += 1
+            session.commit()
+
+            with pytest.raises(CommerceError) as caught:
+                create_order(
+                    session,
+                    CreateOrderRequest(
+                        cart_id=approved.id,
+                        cart_hash=approved.cart_hash or "",
+                        idempotency_key="mutated-approved-attempt",
+                    ),
+                )
+
+    assert caught.value.code == "CART_MUTATED"
 
 
 def test_payment_finalisation_is_verified_and_duplicate_safe(tmp_path: Path) -> None:

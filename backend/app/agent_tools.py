@@ -18,7 +18,7 @@ from .agent_schemas import (
     SearchCatalogArgs,
 )
 from .commerce import CommerceError, create_cart
-from .commerce_schemas import CartItemInput, CreateCartRequest
+from .commerce_schemas import CartItemInput, CompatibilityClaimInput, CreateCartRequest
 from .models import Product
 from .policy import PolicyEvaluationRequest, evaluate_policy, load_policy
 
@@ -159,7 +159,14 @@ def propose_cart(db: Session, args: ProposeCartArgs) -> dict[str, object]:
             CreateCartRequest(
                 items=[
                     CartItemInput(product_id=i.product_id, quantity=i.quantity) for i in args.items
-                ]
+                ],
+                compatibility_claims=[
+                    CompatibilityClaimInput(
+                        primary_product_id=claim.primary_product_id,
+                        addon_product_id=claim.addon_product_id,
+                    )
+                    for claim in args.compatibility_claims
+                ],
             ),
         )
     except CommerceError as error:

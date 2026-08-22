@@ -1,35 +1,17 @@
 import hashlib
 import json
 import re
-from collections import defaultdict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .compatibility import complement_product_ids, products_by_category
 from .models import Product
 from .policy import load_policy
-
-COMPLEMENT_CATEGORIES = {
-    "Kurti, Saree & Lehenga": ("Jewellery & Accessories", "Bags & Footwear"),
-    "Women Western": ("Jewellery & Accessories", "Bags & Footwear"),
-    "Men": ("Bags & Footwear",),
-    "Kids & Toys": ("Bags & Footwear",),
-    "Beauty & Health": ("Jewellery & Accessories",),
-    "Lingerie": ("Women Western",),
-    "Jewellery & Accessories": ("Kurti, Saree & Lehenga", "Women Western"),
-    "Bags & Footwear": ("Women Western", "Men"),
-    "Home & Kitchen": ("Popular",),
-    "Popular": ("Jewellery & Accessories", "Bags & Footwear"),
-}
 
 
 def slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-
-
-def _product_number(product_id: str) -> int:
-    digits = "".join(character for character in product_id if character.isdigit())
-    return int(digits or "0")
 
 
 def _compatibility_tags(product: Product) -> list[str]:
@@ -45,21 +27,9 @@ def _compatibility_tags(product: Product) -> list[str]:
     return sorted(value for value in values if not value.endswith(":"))
 
 
-def _complements(product: Product, by_category: dict[str, list[Product]]) -> list[str]:
-    result: list[str] = []
-    offset = _product_number(product.id)
-    for category in COMPLEMENT_CATEGORIES.get(product.category, ()):
-        candidates = by_category.get(category, [])
-        if candidates:
-            result.append(candidates[offset % len(candidates)].id)
-    return result
-
-
 def build_agent_catalog(session: Session) -> dict[str, object]:
     products = list(session.scalars(select(Product).order_by(Product.id)))
-    by_category: dict[str, list[Product]] = defaultdict(list)
-    for product in products:
-        by_category[product.category].append(product)
+    by_category = products_by_category(products)
 
     version_material = [
         [product.id, product.version, product.price_paise, product.stock] for product in products
@@ -109,7 +79,7 @@ def build_agent_catalog(session: Session) -> dict[str, object]:
                 },
                 "compatibility": {
                     "tags": _compatibility_tags(product),
-                    "complements": _complements(product, by_category),
+                    "complements": complement_product_ids(product, by_category),
                 },
                 "policy_refs": [
                     "POL-DENY-LINE-QUANTITY",

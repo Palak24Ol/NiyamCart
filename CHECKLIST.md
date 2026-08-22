@@ -69,7 +69,7 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 ## Phase 5 - Cart approval
 
 - [x] Re-price cart from authoritative product data.
-- [ ] Re-check inventory and compatibility.
+- [x] Re-check inventory and compatibility.
 - [x] Canonically serialise cart.
 - [x] Generate SHA-256 cart hash.
 - [x] Freeze cart for fifteen minutes.

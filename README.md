@@ -18,7 +18,9 @@ The clean frontend/backend foundation is implemented with:
 - FastAPI health and catalogue endpoints backed by SQLAlchemy.
 - SQLite for zero-config local development; `DATABASE_URL` remains configurable.
 - Authoritatively priced carts with a deterministic 15-minute freeze.
+- Persisted add-on compatibility claims revalidated before freeze, approval, and order creation.
 - SHA-256 binding between the exact cart, human approval, and order.
+- Stored cart hashes are recomputed at approval and order time to reject any mutation.
 - Database-enforced cart/order states and idempotency constraints.
 - Duplicate-safe payment evidence finalisation with amount and currency verification.
 - Bounded OpenAI Responses tool loop with six strict merchant tools.

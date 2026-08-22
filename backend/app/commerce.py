@@ -10,8 +10,9 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from .commerce_models import Cart, CartItem, Order, PaymentEvent
+from .commerce_models import Cart, CartCompatibilityClaim, CartItem, Order, PaymentEvent
 from .commerce_schemas import CreateCartRequest, CreateOrderRequest
+from .compatibility import complement_product_ids, products_by_category
 from .models import Product
 
 FREEZE_DURATION = timedelta(minutes=15)
@@ -31,7 +32,9 @@ def utc_now() -> datetime:
 
 def load_cart(session: Session, cart_id: str) -> Cart:
     cart = session.scalar(
-        select(Cart).where(Cart.id == cart_id).options(selectinload(Cart.items))
+        select(Cart)
+        .where(Cart.id == cart_id)
+        .options(selectinload(Cart.items), selectinload(Cart.compatibility_claims))
     )
     if cart is None:
         raise CommerceError(404, "CART_NOT_FOUND", "Cart not found")
@@ -47,6 +50,30 @@ def create_cart(session: Session, request: CreateCartRequest) -> Cart:
     missing = sorted(set(product_ids) - products.keys())
     if missing:
         raise CommerceError(404, "PRODUCT_NOT_FOUND", f"Unknown products: {', '.join(missing)}")
+
+    cart_product_ids = set(product_ids)
+    for claim in request.compatibility_claims:
+        if {
+            claim.primary_product_id,
+            claim.addon_product_id,
+        } - cart_product_ids:
+            raise CommerceError(
+                422,
+                "INVALID_COMPATIBILITY_CLAIM",
+                "Compatibility claims must reference products in the proposed cart",
+            )
+    if request.compatibility_claims:
+        all_products = list(session.scalars(select(Product).order_by(Product.id)))
+        by_category = products_by_category(all_products)
+        for claim in request.compatibility_claims:
+            primary = products[claim.primary_product_id]
+            if claim.addon_product_id not in complement_product_ids(primary, by_category):
+                raise CommerceError(
+                    409,
+                    "INCOMPATIBLE_ADDON",
+                    f"{claim.addon_product_id} is not a verified add-on for "
+                    f"{claim.primary_product_id}",
+                )
 
     cart = Cart(
         id=str(uuid4()),
@@ -75,26 +102,77 @@ def create_cart(session: Session, request: CreateCartRequest) -> Cart:
             )
         )
         cart.subtotal_paise += line_total
+    for claim in request.compatibility_claims:
+        cart.compatibility_claims.append(
+            CartCompatibilityClaim(
+                primary_product_id=claim.primary_product_id,
+                addon_product_id=claim.addon_product_id,
+                rule_id="COMPAT-DETERMINISTIC-COMPLEMENT-V1",
+            )
+        )
     cart.total_paise = cart.subtotal_paise
     session.add(cart)
     session.commit()
     return load_cart(session, cart.id)
 
 
-def _catalog_matches(session: Session, cart: Cart) -> bool:
+def _cart_validation_error(session: Session, cart: Cart) -> CommerceError | None:
     products = {
         product.id: product
         for product in session.scalars(
             select(Product).where(Product.id.in_([item.product_id for item in cart.items]))
         )
     }
-    return all(
-        (product := products.get(item.product_id)) is not None
-        and product.version == item.product_version
-        and product.price_paise == item.unit_price_paise
-        and product.stock >= item.quantity
-        for item in cart.items
-    )
+    for item in cart.items:
+        product = products.get(item.product_id)
+        if (
+            product is None
+            or product.version != item.product_version
+            or product.price_paise != item.unit_price_paise
+        ):
+            return CommerceError(409, "CART_CHANGED", "Product or price changed; rebuild the cart")
+        if product.stock < item.quantity:
+            return CommerceError(
+                409,
+                "CART_INVENTORY_CHANGED",
+                f"Only {product.stock} units of {item.product_id} remain; rebuild the cart",
+            )
+
+    if cart.compatibility_claims:
+        all_products = list(session.scalars(select(Product).order_by(Product.id)))
+        by_category = products_by_category(all_products)
+        for claim in cart.compatibility_claims:
+            primary = products.get(claim.primary_product_id)
+            if (
+                primary is None
+                or claim.addon_product_id not in complement_product_ids(primary, by_category)
+            ):
+                return CommerceError(
+                    409,
+                    "CART_COMPATIBILITY_CHANGED",
+                    "A claimed add-on is no longer compatible; rebuild the cart",
+                )
+    return None
+
+
+def _invalidate_if_changed(session: Session, cart: Cart) -> None:
+    error = _cart_validation_error(session, cart)
+    if error is not None:
+        cart.status = "invalidated"
+        session.commit()
+        raise error
+
+
+def _invalidate_if_hash_changed(session: Session, cart: Cart) -> None:
+    recalculated = hashlib.sha256(canonical_cart(cart)).hexdigest()
+    if not cart.cart_hash or recalculated != cart.cart_hash:
+        cart.status = "invalidated"
+        session.commit()
+        raise CommerceError(
+            409,
+            "CART_MUTATED",
+            "The frozen cart changed after review; rebuild and approve it again",
+        )
 
 
 def canonical_cart(cart: Cart) -> bytes:
@@ -111,6 +189,17 @@ def canonical_cart(cart: Cart) -> bytes:
             }
             for item in sorted(cart.items, key=lambda value: value.product_id)
         ],
+        "compatibility_claims": [
+            {
+                "primary_product_id": claim.primary_product_id,
+                "addon_product_id": claim.addon_product_id,
+                "rule_id": claim.rule_id,
+            }
+            for claim in sorted(
+                cart.compatibility_claims,
+                key=lambda value: (value.primary_product_id, value.addon_product_id),
+            )
+        ],
         "subtotal_paise": cart.subtotal_paise,
         "total_paise": cart.total_paise,
         "version": cart.version,
@@ -122,13 +211,12 @@ def freeze_cart(session: Session, cart_id: str, now: datetime | None = None) -> 
     now = now or utc_now()
     cart = load_cart(session, cart_id)
     if cart.status == "frozen" and cart.expires_at and cart.expires_at > now:
+        _invalidate_if_changed(session, cart)
+        _invalidate_if_hash_changed(session, cart)
         return cart
     if cart.status != "proposed":
         raise CommerceError(409, "INVALID_CART_STATE", f"Cannot freeze a {cart.status} cart")
-    if not _catalog_matches(session, cart):
-        cart.status = "invalidated"
-        session.commit()
-        raise CommerceError(409, "CART_CHANGED", "Price or stock changed; rebuild the cart")
+    _invalidate_if_changed(session, cart)
 
     cart.cart_hash = hashlib.sha256(canonical_cart(cart)).hexdigest()
     cart.status = "frozen"
@@ -152,6 +240,8 @@ def approve_cart(
         cart.status = "expired"
         session.commit()
         raise CommerceError(409, "CART_EXPIRED", "The frozen cart expired; review it again")
+    _invalidate_if_changed(session, cart)
+    _invalidate_if_hash_changed(session, cart)
     if not cart.cart_hash or supplied_hash != cart.cart_hash:
         raise CommerceError(409, "CART_HASH_MISMATCH", "Approval does not match the frozen cart")
 
@@ -186,10 +276,8 @@ def create_order(
         raise CommerceError(409, "CART_EXPIRED", "The approved cart expired")
     if not cart.cart_hash or cart.cart_hash != request.cart_hash:
         raise CommerceError(409, "CART_HASH_MISMATCH", "Order does not match the approved cart")
-    if not _catalog_matches(session, cart):
-        cart.status = "invalidated"
-        session.commit()
-        raise CommerceError(409, "CART_CHANGED", "Price or stock changed; approval is invalid")
+    _invalidate_if_changed(session, cart)
+    _invalidate_if_hash_changed(session, cart)
 
     claimed = session.execute(
         update(Cart)

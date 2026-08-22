@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AgentRunRequest(BaseModel):
@@ -66,8 +66,16 @@ class ProposedCartItem(BaseModel):
     quantity: int = Field(ge=1, le=10)
 
 
+class ProposedCompatibilityClaim(BaseModel):
+    primary_product_id: str = Field(min_length=1, max_length=64)
+    addon_product_id: str = Field(min_length=1, max_length=64)
+
+
 class ProposeCartArgs(BaseModel):
     items: list[ProposedCartItem] = Field(min_length=1, max_length=20)
+    compatibility_claims: list[ProposedCompatibilityClaim] = Field(
+        default_factory=list, max_length=1
+    )
     buyer_budget_paise: int = Field(ge=0)
 
     @field_validator("items")
@@ -77,6 +85,16 @@ class ProposeCartArgs(BaseModel):
         if len(product_ids) != len(set(product_ids)):
             raise ValueError("duplicate product IDs are not allowed")
         return items
+
+    @model_validator(mode="after")
+    def claims_reference_cart_products(self) -> ProposeCartArgs:
+        product_ids = {item.product_id for item in self.items}
+        for claim in self.compatibility_claims:
+            if claim.primary_product_id == claim.addon_product_id:
+                raise ValueError("a product cannot be its own add-on")
+            if {claim.primary_product_id, claim.addon_product_id} - product_ids:
+                raise ValueError("compatibility claims must reference products in the cart")
+        return self
 
 
 class EscalateArgs(BaseModel):
