@@ -9,6 +9,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .agent_contracts import build_agent_catalog, build_agent_policy, payload_etag
+from .agent_models import AgentSession
+from .agent_schemas import AgentAuditResponse, AgentRunRequest, AgentRunResponse
+from .agent_service import AgentConfig, load_agent_session, run_agent
 from .catalog import seed_catalog
 from .commerce import CommerceError, approve_cart, create_cart, create_order, freeze_cart, load_cart
 from .commerce_models import Order
@@ -138,6 +141,52 @@ def create_app(database_url: str | None = None) -> FastAPI:
     @app.post("/api/policy/evaluate", response_model=PolicyDecision, tags=["policy"])
     def evaluate_policy_route(request: PolicyEvaluationRequest) -> PolicyDecision:
         return evaluate_policy(request)
+
+    @app.post(
+        "/api/agent/sessions", response_model=AgentRunResponse, status_code=201, tags=["agent"]
+    )
+    def create_agent_session(request: AgentRunRequest, session: SessionDependency):
+        return run_agent(session, request.message)
+
+    @app.post(
+        "/api/agent/sessions/{session_id}/messages",
+        response_model=AgentRunResponse,
+        tags=["agent"],
+    )
+    def revise_agent_session(session_id: str, request: AgentRunRequest, session: SessionDependency):
+        agent_session = session.get(AgentSession, session_id)
+        if agent_session is None:
+            raise HTTPException(status_code=404, detail="Agent session not found")
+        if agent_session.revision_count >= agent_session.max_revisions:
+            raise HTTPException(status_code=409, detail="Agent revision budget exhausted")
+        agent_session.revision_count += 1
+        agent_session.status = "running"
+        session.commit()
+        return run_agent(
+            session,
+            request.message,
+            config=AgentConfig.from_env(),
+            agent_session=agent_session,
+        )
+
+    @app.get(
+        "/api/agent/sessions/{session_id}/events",
+        response_model=AgentAuditResponse,
+        tags=["agent"],
+    )
+    def get_agent_audit(session_id: str, session: SessionDependency):
+        agent_session = load_agent_session(session, session_id)
+        if agent_session is None:
+            raise HTTPException(status_code=404, detail="Agent session not found")
+        return AgentAuditResponse(
+            session_id=agent_session.id,
+            status=agent_session.status,
+            model=agent_session.model,
+            step_count=agent_session.step_count,
+            revision_count=agent_session.revision_count,
+            estimated_cost_microusd=agent_session.estimated_cost_microusd,
+            events=agent_session.events,
+        )
 
     return app
 

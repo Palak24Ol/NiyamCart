@@ -52,19 +52,19 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 4 - Agent loop
 
-- [ ] Implement `search_catalog`.
-- [ ] Implement `get_product_details`.
-- [ ] Implement `find_compatible_addons`.
-- [ ] Implement `get_policy`.
-- [ ] Implement `propose_cart`.
-- [ ] Implement `escalate_to_human`.
-- [ ] Implement maximum eight-step loop.
-- [ ] Persist every turn and tool result.
-- [ ] Add step, revision, and spend budgets.
-- [ ] Add typed errors and one repair attempt.
-- [ ] Add safe abstention and degraded mode.
-- [ ] Add buyer- and catalogue-prompt-injection tests.
-- [ ] Prove there is no agent-callable payment/order function.
+- [x] Implement `search_catalog`.
+- [x] Implement `get_product_details`.
+- [x] Implement `find_compatible_addons`.
+- [x] Implement `get_policy`.
+- [x] Implement `propose_cart`.
+- [x] Implement `escalate_to_human`.
+- [x] Implement maximum eight-step loop.
+- [x] Persist every turn and tool result.
+- [x] Add step, revision, and spend budgets.
+- [x] Add typed errors and one repair attempt.
+- [x] Add safe abstention and degraded mode.
+- [x] Add buyer- and catalogue-prompt-injection tests.
+- [x] Prove there is no agent-callable payment/order function.
 
 ## Phase 5 - Cart approval
 

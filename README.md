@@ -21,8 +21,13 @@ The clean frontend/backend foundation is implemented with:
 - SHA-256 binding between the exact cart, human approval, and order.
 - Database-enforced cart/order states and idempotency constraints.
 - Duplicate-safe payment evidence finalisation with amount and currency verification.
+- Bounded OpenAI Responses tool loop with six strict merchant tools.
+- Durable, sequenced audit events for user messages, model outputs, tool calls, and results.
+- Eight-step, two-revision, and per-session model-cost limits.
+- Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
 
-The assistant response is intentionally simulated in this first frontend checkpoint. The bounded OpenAI tool loop and deterministic backend are built in later phases.
+The current frontend panel still uses its demonstration response; connecting it to the completed
+backend agent API is part of the dedicated frontend-and-audit phase.
 
 ## Run locally
 
@@ -65,6 +70,21 @@ NiyamCart publishes stable machine contracts for AI buyers:
 - `merchant.yaml` — merchant identity, endpoints, limits, payment boundary, and the exact six supported agent actions.
 
 Both well-known endpoints support conditional requests through `If-None-Match` and return `304 Not Modified` when unchanged. Their JSON Schemas live in `backend/schemas/`.
+
+## Bounded agent API
+
+- `POST /api/agent/sessions` runs a new request through at most eight model turns.
+- `POST /api/agent/sessions/{id}/messages` allows at most two buyer revisions.
+- `GET /api/agent/sessions/{id}/events` returns the reproducible public audit timeline.
+
+Set `OPENAI_API_KEY` to use the live Responses API. The default model is
+`gpt-5.6-luna` at low reasoning effort. Without a key—or during a provider failure—the endpoint
+falls back to deterministic catalog search, labels the result as degraded, and never fabricates a
+cart. Model calls are additionally capped by `AGENT_MAX_COST_MICROUSD`.
+
+The only model-callable tools are catalog search, product details, compatible add-ons, policy
+lookup, proposed-cart creation, and human escalation. Order creation, approval, checkout, and
+payment are intentionally absent.
 
 ## Verify
 
