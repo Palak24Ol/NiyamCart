@@ -18,13 +18,13 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 ## Phase 1 - Clean foundation
 
 - [x] Import only the buyer-facing frontend shell.
-- [ ] Import only relevant backend infrastructure.
+- [x] Import only relevant backend infrastructure.
 - [x] Remove seller, admin, delivery, return, review, voice, address, and image workflows.
 - [x] Replace Kavach-specific names in active application code.
 - [x] Add small purpose-built product catalogue.
-- [ ] Make frontend, backend, and database start locally.
-- [ ] Establish lint, unit-test, and build commands.
-- [ ] Verify clean setup instructions.
+- [x] Make frontend, backend, and database start locally.
+- [x] Establish lint, unit-test, and build commands.
+- [x] Verify clean setup instructions.
 
 ## Phase 2 - Money and payment safety
 

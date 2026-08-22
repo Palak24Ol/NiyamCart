@@ -17,4 +17,5 @@ test-results/
 tmp/
 *.log
 *.tsbuildinfo
+*.db
 .DS_Store

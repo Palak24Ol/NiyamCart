@@ -28,6 +28,16 @@ Active frontend files are:
 
 No credentials, environment values, user records, raw-card forms, media files, or old branding were imported.
 
+## Catalogue checkpoint implemented
+
+- Reused the authorized `data/seed/products.json` product records only.
+- Reused the 500 primary product images only; buyer, seller, order, address, review, return, label, and multi-angle data were excluded.
+- Normalized every monetary value from integer rupees to integer paise.
+- Replaced inherited presentation phrases with neutral NiyamCart catalogue language.
+- Converted 500 PNG primary images to optimized WebP files, reducing the set from approximately 61 MB to approximately 8 MB.
+- Added a reproducible importer at `scripts/import_catalog.py` instead of relying on the original repository at runtime.
+- Preserved a fixed catalogue of 500 unique products across 10 categories for repeatable agent evaluation.
+
 ## Planned selective reuse
 
 | Foundation | Planned handling | Buildathon-specific work |

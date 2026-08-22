@@ -23,9 +23,9 @@ import { formatMoney, products, type Product } from "@/lib/catalog";
 type Cart = Record<string, number>;
 
 const suggestions = [
-  "Build a work-from-home setup under ₹10,000",
-  "Find travel-friendly audio",
-  "Compare the best workspace products",
+  "Build a festive outfit under ₹1,500",
+  "Find skincare under ₹500",
+  "Compare office-ready looks",
 ];
 
 export function NiyamCartApp() {
@@ -36,6 +36,7 @@ export function NiyamCartApp() {
   const [agentOpen, setAgentOpen] = useState(true);
   const [agentQuery, setAgentQuery] = useState("");
   const [agentAnswer, setAgentAnswer] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(12);
 
   const categories = ["All", ...Array.from(new Set(products.map((item) => item.category)))];
   const visibleProducts = products.filter((item) => {
@@ -43,6 +44,7 @@ export function NiyamCartApp() {
     const haystack = `${item.name} ${item.description} ${item.tags.join(" ")}`.toLowerCase();
     return matchesCategory && haystack.includes(query.toLowerCase());
   });
+  const displayedProducts = visibleProducts.slice(0, visibleCount);
 
   const cartLines = useMemo(
     () =>
@@ -70,7 +72,7 @@ export function NiyamCartApp() {
     if (!prompt.trim()) return;
     setAgentQuery(prompt);
     setAgentAnswer(
-      "I found a balanced setup under your ₹10,000 limit: Orbit ANC Headphones and Loop Laptop Stand. Together they cost ₹8,098, leaving ₹1,902 in your budget. I chose them for work calls, comfort and strong buyer ratings.",
+      "I found a coordinated festive pairing under your ₹1,500 limit: the Maroon Floral Cotton Kurta and Berry Pearl Drop Earrings. Together they cost ₹478, leaving plenty of room in your budget. I chose them for their complementary style, strong ratings and in-stock availability.",
     );
   };
 
@@ -118,14 +120,14 @@ export function NiyamCartApp() {
           <div className="hero-card" aria-label="Example Niyam recommendation">
             <div className="agent-orb"><Bot size={27} /></div>
             <span className="mini-label">Niyam recommends</span>
-            <h2>Your focused work setup</h2>
-            <p>Two highly rated products that fit your needs and stay below ₹10,000.</p>
+            <h2>Your festive pairing</h2>
+            <p>Two coordinated, highly rated products that stay comfortably below ₹1,500.</p>
             <div className="bundle-items">
-              <div><span>🎧</span><p><b>Orbit ANC</b><small>Clear calls</small></p><strong>₹6,499</strong></div>
-              <div><span>💻</span><p><b>Loop Stand</b><small>Better posture</small></p><strong>₹1,599</strong></div>
+              <div><img src="/catalog/P-001.webp" alt="" /><p><b>Floral Cotton Kurta</b><small>Everyday comfort</small></p><strong>₹349</strong></div>
+              <div><img src="/catalog/P-351.webp" alt="" /><p><b>Pearl Drop Earrings</b><small>Coordinated add-on</small></p><strong>₹129</strong></div>
             </div>
-            <div className="bundle-total"><span>Total</span><b>₹8,098</b></div>
-            <button onClick={() => { setCart({ "orbit-headphones": 1, "loop-stand": 1 }); setCartOpen(true); }}>
+            <div className="bundle-total"><span>Total</span><b>₹478</b></div>
+            <button onClick={() => { setCart({ "P-001": 1, "P-351": 1 }); setCartOpen(true); }}>
               Review this cart <ArrowRight size={17} />
             </button>
             <small className="approval-note"><ShieldCheck size={14} /> Nothing is purchased until you approve</small>
@@ -135,7 +137,7 @@ export function NiyamCartApp() {
         <section className="shop-section" id="shop">
           <div className="section-heading">
             <div><span className="kicker">CURATED FOR REAL LIFE</span><h2>Products worth choosing</h2></div>
-            <p>Clear details, honest prices and recommendations you can understand.</p>
+            <p>Explore 500 products across 10 categories with clear details and explainable recommendations.</p>
           </div>
 
           <div className="shop-tools">
@@ -146,17 +148,22 @@ export function NiyamCartApp() {
             </label>
             <div className="category-tabs">
               {categories.map((item) => (
-                <button className={category === item ? "selected" : ""} onClick={() => setCategory(item)} key={item}>{item}</button>
+                <button className={category === item ? "selected" : ""} onClick={() => { setCategory(item); setVisibleCount(12); }} key={item}>{item}</button>
               ))}
             </div>
             <button className="sort-button">Recommended <ChevronDown size={16} /></button>
           </div>
 
           <div className="product-grid">
-            {visibleProducts.map((product) => (
+            {displayedProducts.map((product) => (
               <ProductCard product={product} quantity={cart[product.id] || 0} updateCart={updateCart} key={product.id} />
             ))}
           </div>
+          {displayedProducts.length < visibleProducts.length && (
+            <button className="load-more" onClick={() => setVisibleCount((count) => count + 12)}>
+              Show more products <span>{displayedProducts.length} of {visibleProducts.length}</span>
+            </button>
+          )}
           {!visibleProducts.length && <div className="empty-state"><Search size={28} /><h3>No exact match yet</h3><p>Try a broader need or ask Niyam to help.</p></div>}
         </section>
 
@@ -186,7 +193,7 @@ export function NiyamCartApp() {
             {agentAnswer && (
               <>
                 <div className="user-message">{agentQuery}</div>
-                <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> EXPLAINED RECOMMENDATION</span><p>{agentAnswer}</p><button className="inline-action" onClick={() => { setCart({ "orbit-headphones": 1, "loop-stand": 1 }); setCartOpen(true); }}>Review proposed cart <ArrowRight size={15} /></button></div>
+                <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> EXPLAINED RECOMMENDATION</span><p>{agentAnswer}</p><button className="inline-action" onClick={() => { setCart({ "P-001": 1, "P-351": 1 }); setCartOpen(true); }}>Review proposed cart <ArrowRight size={15} /></button></div>
               </>
             )}
           </div>
@@ -208,7 +215,7 @@ function ProductCard({ product, quantity, updateCart }: { product: Product; quan
     <article className="product-card">
       <div className="product-visual" style={{ background: product.accent }}>
         {product.badge && <span className="product-badge">{product.badge}</span>}
-        <span className="product-emoji">{product.emoji}</span>
+        <img className="product-image" src={product.image} alt={product.name} loading="lazy" />
         <button className="view-button">Quick view</button>
       </div>
       <div className="product-info">
@@ -239,7 +246,7 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
           {!lines.length && <div className="empty-cart"><ShoppingBag size={32} /><h3>Your cart is empty</h3><p>Add a product or ask Niyam to build a cart for you.</p></div>}
           {lines.map(({ product, quantity }) => (
             <div className="cart-line" key={product.id}>
-              <span className="line-visual" style={{ background: product.accent }}>{product.emoji}</span>
+              <span className="line-visual" style={{ background: product.accent }}><img src={product.image} alt="" /></span>
               <div className="line-copy"><b>{product.name}</b><small>{formatMoney(product.pricePaise)} each</small><div className="quantity-control"><button onClick={() => updateCart(product.id, -1)}>{quantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}</button><b>{quantity}</b><button onClick={() => updateCart(product.id, 1)}><Plus size={14} /></button></div></div>
               <strong>{formatMoney(product.pricePaise * quantity)}</strong>
             </div>
