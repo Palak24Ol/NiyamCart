@@ -325,6 +325,17 @@ def create_order(
 
     cart = load_cart(session, request.cart_id)
     if cart.status != "approved":
+        if cart.status == "ordered":
+            session.rollback()
+            recovered = session.scalar(
+                select(Order).where(Order.idempotency_key == request.idempotency_key)
+            )
+            if (
+                recovered
+                and recovered.cart_id == request.cart_id
+                and recovered.cart_hash == request.cart_hash
+            ):
+                return recovered
         raise CommerceError(409, "INVALID_CART_STATE", f"Cannot order a {cart.status} cart")
     if not cart.expires_at or cart.expires_at <= now:
         cart.status = "expired"
