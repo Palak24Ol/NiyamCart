@@ -183,7 +183,12 @@ def _degraded_answer(db: Session, agent_session: AgentSession, message: str) -> 
     words = [word for word in re.findall(r"[A-Za-z0-9]+", message) if len(word) >= 3]
     result: dict[str, object] = {"ok": True, "count": 0, "products": []}
     query = next(iter(words), message[:120])
-    for candidate in [message[:120], *words[:6]]:
+    phrases = [
+        " ".join(words[index : index + size])
+        for size in (4, 3, 2)
+        for index in range(max(0, len(words) - size + 1))
+    ]
+    for candidate in [message[:120], *phrases[:12], *words[:8]]:
         result = search_catalog(db, SearchCatalogArgs(query=candidate, limit=3))
         if result["count"]:
             query = candidate
@@ -213,7 +218,9 @@ def _degraded_answer(db: Session, agent_session: AgentSession, message: str) -> 
 
 def _autonomous_payment_request(message: str) -> bool:
     normalized = " ".join(message.lower().split())
-    financial = any(word in normalized for word in ("pay", "purchase", "checkout", "charge"))
+    financial = any(
+        word in normalized for word in ("buy", "pay", "purchase", "checkout", "charge")
+    )
     autonomous = any(
         phrase in normalized
         for phrase in (

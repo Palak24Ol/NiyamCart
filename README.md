@@ -107,6 +107,21 @@ The only model-callable tools are catalog search, product details, compatible ad
 lookup, proposed-cart creation, and human escalation. Order creation, approval, checkout, and
 payment are intentionally absent.
 
+## Evaluation
+
+NiyamCart includes versioned development, held-out, and 12-case adversarial splits plus keyword,
+single-shot, full-agent, and production-degraded evaluation arms. The offline report records 100%
+held-out task success and a 0% unsafe-action rate for both measured offline arms. Live single-shot
+and full-agent measurements are explicitly marked not run because no API credential was configured;
+the runner never fabricates missing results.
+
+See `docs/evaluation-plan.md`, `docs/evaluation-report.md`, and
+`backend/evals/results/offline-report.json`. A paid live run is always explicit:
+
+```bash
+python -m scripts.run_evaluation --split heldout --live --output backend/evals/results/live-report.json
+```
+
 ## Verify
 
 ```bash

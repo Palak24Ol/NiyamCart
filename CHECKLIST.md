@@ -109,18 +109,18 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 8 - Evaluation and reliability
 
-- [ ] Declare success thresholds.
-- [ ] Create development tasks.
-- [ ] Create untouched held-out tasks.
-- [ ] Implement keyword baseline.
-- [ ] Implement single-shot LLM baseline.
-- [ ] Implement full-agent evaluation arm.
-- [ ] Add twelve-case adversarial suite.
-- [ ] Record exact model and prompt versions.
-- [ ] Report primary and secondary metrics.
-- [ ] Preserve failing transcripts.
-- [ ] Run unit, integration, property, and browser tests.
-- [ ] Test LLM outage, malformed output, timeout, and rate limit.
+- [x] Declare success thresholds.
+- [x] Create development tasks.
+- [x] Create untouched held-out tasks.
+- [x] Implement keyword baseline.
+- [x] Implement single-shot LLM baseline.
+- [x] Implement full-agent evaluation arm.
+- [x] Add twelve-case adversarial suite.
+- [x] Record exact model and prompt versions.
+- [x] Report primary and secondary metrics.
+- [x] Preserve failing transcripts.
+- [x] Run unit, integration, property, and browser tests.
+- [x] Test LLM outage, malformed output, timeout, and rate limit.
 
 ## Phase 9 - Optional WhatsApp handoff
 
