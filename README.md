@@ -2,7 +2,27 @@
 
 **AI shopping, within your rules.**
 
-NiyamCart is a bounded AI shopping agent for Razorpay AI Buildathon Track 1. It helps buyers discover products, understand recommendations, build a cart, and retain control of the final approval and payment.
+## Problem
+
+AI shopping becomes unsafe when a probabilistic model can invent product facts, change prices, or
+act as if it approved and verified a payment. Merchants also need machine-readable catalogues and
+policies before an AI buyer can transact with them reliably.
+
+## Thesis
+
+NiyamCart is a bounded AI shopping agent for Razorpay AI Buildathon Track 1. The model may search,
+compare, explain, and propose through six typed tools. Deterministic server code owns prices,
+inventory, policy, the exact cart hash, human approval, order creation, Razorpay test reconciliation,
+and the audit trail.
+
+## Reuse disclosure
+
+The buyer-storefront concepts, authorized 500-product seed data, and primary product images were
+selectively adapted from the team’s earlier Kavach Saathi project. No source file was copied
+wholesale, and unrelated agents/workflows, old branding, user data, and credentials were excluded.
+The bounded agent loop, machine contracts, policy engine, cart-hash approval, hardened Razorpay
+flow, verifiable audit, evaluation harness, and safe handoff are new Buildathon work. Exact provenance
+is documented in `ADAPTATION.md`.
 
 ## Current checkpoint
 
@@ -30,6 +50,7 @@ The clean frontend/backend foundation is implemented with:
 - Redacted, hash-chained audit events with server-side tamper verification.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
+- 69 automated tests spanning unit, integration, randomized properties, reliability, and races.
 
 The frontend calls the bounded agent API directly. It shows typed tool activity, grounded product
 evidence, policy rule IDs, safe degraded states, and audit verification without exposing hidden
@@ -37,7 +58,7 @@ model reasoning.
 
 ## Run locally
 
-Requirements: Node.js 20 or newer.
+Requirements: Node.js 20 or newer and Python 3.11 or newer.
 
 ```bash
 npm install
@@ -138,7 +159,9 @@ npm run typecheck
 npm run build
 npm audit --omit=dev
 python -m ruff check backend scripts
-python -m pytest
+python -m pytest backend/tests -q
+python scripts/security_check.py
+python scripts/check_links.py
 ```
 
 ## Project records
@@ -148,6 +171,10 @@ python -m pytest
 - `ADAPTATION.md` — selective reuse and provenance record.
 - `docs/SOURCE_AUDIT.md` — source review and exclusions.
 - `docs/DECISIONS.md` — important product and technical decisions.
+- `docs/architecture.md` — implemented trust boundary, components, states, and failures.
+- `docs/evaluation-report.md` — measured results and explicitly unrun live arms.
+- `docs/limitations.md` — honest MVP and deployment constraints.
+- `docs/demo-script.md` — timed five-minute demonstration and rehearsal record.
 
 ## Safety boundary
 

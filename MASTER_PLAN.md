@@ -1,12 +1,12 @@
-# BoundedCart Master Plan
+# NiyamCart Master Plan
 
-Status: planning and scope lock
+Status: implemented through evaluation; submission evidence and external credentials remain
 Track: Razorpay AI Buildathon - Track 1, AI Growth & Agentic Commerce
 Primary goal: make one merchant safely transactable by an AI buyer end to end in Razorpay test mode.
 
 ## 1. Product thesis
 
-BoundedCart is a policy-controlled AI shopping agent. A merchant publishes a machine-readable catalogue and policy. The agent can search, inspect, reason, and propose a cart through six typed tools. Deterministic code owns prices, inventory, approval, order creation, payment verification, finalisation, and audit writes.
+NiyamCart is a policy-controlled AI shopping agent. A merchant publishes a machine-readable catalogue and policy. The agent can search, inspect, reason, and propose a cart through six typed tools. Deterministic code owns prices, inventory, approval, order creation, payment verification, finalisation, and audit writes.
 
 The trust boundary is:
 
@@ -299,7 +299,7 @@ Exit gate:
 
 Deliverables:
 
-- Twenty to forty held-out tasks.
+- Twelve frozen held-out tasks plus twelve development and twelve adversarial tasks.
 - Keyword baseline.
 - Single-shot LLM baseline.
 - Full bounded-agent arm.
@@ -379,4 +379,3 @@ Before adding any feature, answer:
 5. Can it be completed without delaying a must-have item?
 
 If fewer than four answers are yes, the feature stays out.
-
