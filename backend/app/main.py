@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -25,11 +26,29 @@ from .commerce_schemas import (
 from .database import Database
 from .models import Product
 from .policy import PolicyDecision, PolicyEvaluationRequest, evaluate_policy
+from .razorpay_schemas import (
+    PaymentVerificationResponse,
+    RazorpayCheckoutResponse,
+    RazorpayWebhookResponse,
+    VerifyRazorpayPaymentRequest,
+)
+from .razorpay_service import (
+    RazorpayError,
+    RazorpayGateway,
+    configured_gateway,
+    create_razorpay_checkout,
+    process_razorpay_webhook,
+    verify_checkout_payment,
+)
 from .schemas import HealthResponse, ProductListResponse, ProductResponse
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
+def create_app(
+    database_url: str | None = None,
+    razorpay_gateway: RazorpayGateway | None = None,
+) -> FastAPI:
     db = Database(database_url or os.getenv("DATABASE_URL", "sqlite:///./niyamcart.db"))
+    gateway = razorpay_gateway if razorpay_gateway is not None else configured_gateway()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -44,7 +63,16 @@ def create_app(database_url: str | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[frontend_origin],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["content-type"],
+    )
     app.state.db = db
+    app.state.razorpay_gateway = gateway
 
     def get_session() -> Generator[Session, None, None]:
         yield from db.session()
@@ -53,6 +81,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     @app.exception_handler(CommerceError)
     async def commerce_error_handler(_: Request, error: CommerceError) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"error": error.code, "message": error.message},
+        )
+
+    @app.exception_handler(RazorpayError)
+    async def razorpay_error_handler(_: Request, error: RazorpayError) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,
             content={"error": error.code, "message": error.message},
@@ -119,6 +154,40 @@ def create_app(database_url: str | None = None) -> FastAPI:
         if order is None:
             raise CommerceError(404, "ORDER_NOT_FOUND", "Order not found")
         return order
+
+    @app.post(
+        "/api/orders/{order_id}/razorpay-checkout",
+        response_model=RazorpayCheckoutResponse,
+        status_code=201,
+        tags=["payments"],
+    )
+    def create_razorpay_checkout_route(order_id: str, session: SessionDependency):
+        return create_razorpay_checkout(session, order_id, app.state.razorpay_gateway)
+
+    @app.post(
+        "/api/payments/razorpay/verify",
+        response_model=PaymentVerificationResponse,
+        tags=["payments"],
+    )
+    def verify_razorpay_payment_route(
+        payload: VerifyRazorpayPaymentRequest, session: SessionDependency
+    ):
+        return verify_checkout_payment(session, payload, app.state.razorpay_gateway)
+
+    @app.post(
+        "/api/payments/razorpay/webhook",
+        response_model=RazorpayWebhookResponse,
+        tags=["payments"],
+    )
+    async def razorpay_webhook_route(request: Request, session: SessionDependency):
+        raw_body = await request.body()
+        return process_razorpay_webhook(
+            session,
+            raw_body,
+            request.headers.get("x-razorpay-signature", ""),
+            request.headers.get("x-razorpay-event-id", ""),
+            app.state.razorpay_gateway,
+        )
 
     @app.get("/.well-known/agent-catalog.json", tags=["agent contracts"])
     def agent_catalog_route(request: Request, session: SessionDependency) -> Response:

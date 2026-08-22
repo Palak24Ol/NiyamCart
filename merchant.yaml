@@ -16,6 +16,10 @@ commerce:
 payment:
   provider: razorpay
   mode: test
+  checkout_order_url: /api/orders/{order_id}/razorpay-checkout
+  verification_url: /api/payments/razorpay/verify
+  webhook_url: /api/payments/razorpay/webhook
+  success_truth: server_fetched_captured_payment
   agent_can_create_payment: false
   agent_can_approve_payment: false
   agent_can_verify_payment: false

@@ -17,8 +17,13 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatMoney, products, type Product } from "@/lib/catalog";
+import {
+  approveAndOpenCheckout,
+  prepareCartForApproval,
+  type ApprovalCart,
+} from "@/lib/checkout";
 
 type Cart = Record<string, number>;
 
@@ -237,6 +242,47 @@ function ProductCard({ product, quantity, updateCart }: { product: Product; quan
 }
 
 function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: Product; quantity: number }[]; subtotal: number; updateCart: (id: string, delta: number) => void; close: () => void }) {
+  const [approval, setApproval] = useState<ApprovalCart | null>(null);
+  const [checkoutState, setCheckoutState] = useState<
+    "idle" | "locking" | "ready" | "opening" | "paid"
+  >("idle");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const lineSignature = lines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|");
+
+  useEffect(() => {
+    setApproval(null);
+    setCheckoutState("idle");
+    setCheckoutError(null);
+  }, [lineSignature]);
+
+  const lockCart = async () => {
+    setCheckoutState("locking");
+    setCheckoutError(null);
+    try {
+      const frozen = await prepareCartForApproval(
+        lines.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+      );
+      setApproval(frozen);
+      setCheckoutState("ready");
+    } catch (error) {
+      setCheckoutState("idle");
+      setCheckoutError(error instanceof Error ? error.message : "The cart could not be locked.");
+    }
+  };
+
+  const approveAndPay = async () => {
+    if (!approval) return;
+    setCheckoutState("opening");
+    setCheckoutError(null);
+    try {
+      await approveAndOpenCheckout(approval);
+      setCheckoutState("paid");
+    } catch (error) {
+      setCheckoutState("ready");
+      setCheckoutError(error instanceof Error ? error.message : "Payment was not verified.");
+    }
+  };
+
   return (
     <div className="drawer-layer">
       <button className="drawer-backdrop" onClick={close} aria-label="Close cart" />
@@ -257,7 +303,34 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
           <div><span>Delivery</span><b className="free">Free</b></div>
           <div className="total-line"><span>Total</span><strong>{formatMoney(subtotal)}</strong></div>
           <div className="approval-box"><ShieldCheck size={19} /><p><b>You remain in control</b><small>We’ll lock and show the exact cart again before opening Razorpay test checkout.</small></p></div>
-          <button className="checkout-button">Continue to approval <ArrowRight size={18} /></button>
+          {approval && checkoutState !== "paid" && (
+            <div className="exact-approval">
+              <span>Exact cart awaiting your approval</span>
+              <b>{formatMoney(approval.total_paise)}</b>
+              <code title={approval.cart_hash}>{approval.cart_hash}</code>
+              <small>
+                Locked until {new Date(
+                  approval.expires_at.endsWith("Z")
+                    ? approval.expires_at
+                    : `${approval.expires_at}Z`,
+                ).toLocaleTimeString()}
+              </small>
+            </div>
+          )}
+          {checkoutState === "paid" ? (
+            <div className="payment-success"><Check size={18} /><b>Payment verified by NiyamCart</b></div>
+          ) : approval ? (
+            <button className="checkout-button" onClick={approveAndPay} disabled={checkoutState === "opening"}>
+              {checkoutState === "opening" ? "Opening secure checkout…" : "Approve exact cart & pay"}
+              <ArrowRight size={18} />
+            </button>
+          ) : (
+            <button className="checkout-button" onClick={lockCart} disabled={checkoutState === "locking"}>
+              {checkoutState === "locking" ? "Locking authoritative prices…" : "Continue to approval"}
+              <ArrowRight size={18} />
+            </button>
+          )}
+          {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
           <small className="test-mode">Razorpay test mode · No real money charged</small>
         </div>}
       </aside>

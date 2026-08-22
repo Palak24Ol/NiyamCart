@@ -81,18 +81,18 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 6 - Razorpay
 
-- [ ] Create one Razorpay test order per approved cart.
-- [ ] Bind receipt/metadata to cart hash.
-- [ ] Open Razorpay Checkout.
-- [ ] Verify checkout signature.
-- [ ] Fetch payment from Razorpay.
-- [ ] Verify captured status.
-- [ ] Verify amount and currency.
-- [ ] Verify expected Razorpay order ID.
-- [ ] Route callback and webhook through one finaliser.
-- [ ] Deduplicate webhook event IDs.
-- [ ] Handle out-of-order events.
-- [ ] Demonstrate duplicate-order safety.
+- [x] Create one Razorpay test order per approved cart.
+- [x] Bind receipt/metadata to cart hash.
+- [x] Open Razorpay Checkout.
+- [x] Verify checkout signature.
+- [x] Fetch payment from Razorpay.
+- [x] Verify captured status.
+- [x] Verify amount and currency.
+- [x] Verify expected Razorpay order ID.
+- [x] Route callback and webhook through one finaliser.
+- [x] Deduplicate webhook event IDs.
+- [x] Handle out-of-order events.
+- [x] Demonstrate duplicate-order safety.
 
 ## Phase 7 - Frontend and audit
 

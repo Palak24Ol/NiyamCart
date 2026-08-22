@@ -23,6 +23,9 @@ The clean frontend/backend foundation is implemented with:
 - Stored cart hashes are recomputed at approval and order time to reject any mutation.
 - Database-enforced cart/order states and idempotency constraints.
 - Duplicate-safe payment evidence finalisation with amount and currency verification.
+- Razorpay test-order creation bound to the internal order, receipt, and exact cart hash.
+- Standard Checkout with a separate human approval action and server-side signature verification.
+- Callback and raw-body-verified webhook reconciliation through one payment finaliser.
 - Bounded OpenAI Responses tool loop with six strict merchant tools.
 - Durable, sequenced audit events for user messages, model outputs, tool calls, and results.
 - Eight-step, two-revision, and per-session model-cost limits.
@@ -60,7 +63,20 @@ Open `http://localhost:8000/docs` for the local API explorer.
 4. `POST /api/orders` accepts only an approved cart and requires an idempotency key.
 5. Payment evidence is finalised internally only after signature, capture, provider order, amount, and currency checks.
 
-The public API exposes no raw-card or CVV fields. Razorpay API wiring is added in the dedicated integration phase; the state machine and verification boundary already exist.
+The public API exposes no raw-card or CVV fields. NiyamCart accepts only `rzp_test_` credentials.
+Checkout callback data is never accepted as payment truth by itself: the backend fetches the payment
+from Razorpay and matches captured status, amount, currency, and the server-stored provider order ID.
+
+## Razorpay test-mode setup
+
+Set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` in your local
+environment. Use only keys generated while the Razorpay Dashboard is in Test Mode. Configure the
+test webhook URL as `POST /api/payments/razorpay/webhook` and enable `payment.captured`,
+`payment.failed`, and `order.paid`.
+
+The browser loads Razorpay Standard Checkout only after the buyer first locks the cart, reviews its
+authoritative total and SHA-256 hash, and then clicks the separate exact-approval button. The secret
+keys never enter the browser; only the public test key ID is returned in the checkout configuration.
 
 ## Agent-readable merchant
 

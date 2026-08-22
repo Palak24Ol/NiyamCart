@@ -18,6 +18,8 @@ from .database import Base
 
 CART_STATES = ("proposed", "frozen", "approved", "ordered", "expired", "invalidated")
 ORDER_STATES = ("payment_pending", "paid", "payment_failed", "cancelled")
+RAZORPAY_CHECKOUT_STATES = ("creating", "ready", "failed")
+WEBHOOK_STATES = ("processing", "processed", "ignored", "retryable")
 
 
 class Cart(Base):
@@ -151,3 +153,51 @@ class PaymentEvent(Base):
     )
 
     order: Mapped[Order] = relationship(back_populates="payment_events")
+
+
+class RazorpayCheckout(Base):
+    __tablename__ = "razorpay_checkouts"
+    __table_args__ = (
+        CheckConstraint(
+            f"state IN {RAZORPAY_CHECKOUT_STATES}", name="ck_razorpay_checkout_state"
+        ),
+        CheckConstraint("amount_paise >= 0", name="ck_razorpay_amount_nonnegative"),
+    )
+
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), primary_key=True)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    receipt: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    provider_order_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, unique=True
+    )
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    cart_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    failure_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class RazorpayWebhookReceipt(Base):
+    __tablename__ = "razorpay_webhook_receipts"
+    __table_args__ = (
+        CheckConstraint(f"status IN {WEBHOOK_STATES}", name="ck_razorpay_webhook_status"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

@@ -166,6 +166,14 @@ a { color: inherit; text-decoration: none; }
 .approval-box p { margin: 0; display: flex; flex-direction: column; }
 .approval-box small { margin-top: 2px; color: #537163; line-height: 1.4; }
 .checkout-button { width: 100%; min-height: 48px; border: 0; border-radius: 10px; color: white; background: var(--green); display: flex; justify-content: center; align-items: center; gap: 10px; font-weight: 700; cursor: pointer; }
+.checkout-button:disabled { cursor: wait; opacity: .68; }
+.cart-summary .exact-approval { margin: 13px 0; padding: 12px; border: 1px solid #cddbd3; border-radius: 10px; background: #f7faf7; display: grid; gap: 6px; }
+.exact-approval span { color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
+.exact-approval b { font-size: 18px; }
+.exact-approval code { display: block; overflow: hidden; padding: 7px; border-radius: 6px; background: #e9efe9; color: #385248; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.exact-approval small { color: var(--muted); font-size: 10px; }
+.cart-summary .payment-success { margin: 13px 0; padding: 13px; border-radius: 10px; background: var(--mint); color: var(--green-dark); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.checkout-error { margin: 10px 0 0; color: #a13c32; font-size: 11px; line-height: 1.4; }
 .test-mode { margin-top: 9px; color: #87918c; display: block; text-align: center; font-size: 10px; }
 
 @media (max-width: 980px) {
