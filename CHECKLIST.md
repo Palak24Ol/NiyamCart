@@ -140,7 +140,7 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 - [x] `docs/architecture.md` exists and matches implementation.
 - [x] Architecture diagram shows probabilistic/deterministic trust boundary.
 - [x] Setup works on a clean machine.
-- [ ] CI is green.
+- [x] CI is green.
 - [x] Repository contains no secrets or personal data.
 - [x] Repository contains no broken links.
 - [x] Evaluation report is committed.

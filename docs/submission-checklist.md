@@ -2,21 +2,23 @@
 
 ## Links to collect
 
-- Public GitHub repository: <https://github.com/Palak24Ol/NiyamCart>
+- GitHub repository (currently private; make public before submission):
+  <https://github.com/Palak24Ol/NiyamCart>
 - Hosted demo URL: pending
 - Five-minute video URL: pending
 - Backup video/download URL: pending
 
 ## Final human-only actions
 
-1. Add valid OpenAI and Razorpay test credentials locally; never commit them.
-2. Run one frozen held-out live evaluation and commit its honest report.
-3. Complete one Razorpay test payment from a natural-language request.
-4. Rehearse the timed script three times and fill `docs/demo-script.md`.
-5. Record the five-minute video, verify access in an incognito window, and keep a backup.
-6. Open the official submission form, compare every field with the current rules, and review before
+1. Change the GitHub repository visibility to public and verify its URL in an incognito window.
+2. Add valid OpenAI and Razorpay test credentials locally; never commit them.
+3. Run one frozen held-out live evaluation and commit its honest report.
+4. Complete one Razorpay test payment from a natural-language request.
+5. Rehearse the timed script three times and fill `docs/demo-script.md`.
+6. Record the five-minute video, verify access in an incognito window, and keep a backup.
+7. Open the official submission form, compare every field with the current rules, and review before
    the final submit action.
-7. If external WhatsApp delivery is desired, explicitly authorize Twilio transmission and provide
+8. If external WhatsApp delivery is desired, explicitly authorize Twilio transmission and provide
    approved Content SIDs; otherwise demo the safe in-app fallback only.
 
 ## Claims that are safe today
@@ -28,4 +30,3 @@
 - 69 automated tests before the final clean-machine pass.
 - Offline evaluation results clearly separated from unrun live-model arms.
 - Local-only WhatsApp handoff foundation with no external transmission.
-
