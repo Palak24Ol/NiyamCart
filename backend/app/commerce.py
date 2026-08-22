@@ -1,0 +1,323 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
+
+from .commerce_models import Cart, CartItem, Order, PaymentEvent
+from .commerce_schemas import CreateCartRequest, CreateOrderRequest
+from .models import Product
+
+FREEZE_DURATION = timedelta(minutes=15)
+
+
+class CommerceError(Exception):
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def load_cart(session: Session, cart_id: str) -> Cart:
+    cart = session.scalar(
+        select(Cart).where(Cart.id == cart_id).options(selectinload(Cart.items))
+    )
+    if cart is None:
+        raise CommerceError(404, "CART_NOT_FOUND", "Cart not found")
+    return cart
+
+
+def create_cart(session: Session, request: CreateCartRequest) -> Cart:
+    product_ids = [item.product_id for item in request.items]
+    products = {
+        product.id: product
+        for product in session.scalars(select(Product).where(Product.id.in_(product_ids)))
+    }
+    missing = sorted(set(product_ids) - products.keys())
+    if missing:
+        raise CommerceError(404, "PRODUCT_NOT_FOUND", f"Unknown products: {', '.join(missing)}")
+
+    cart = Cart(
+        id=str(uuid4()),
+        status="proposed",
+        currency="INR",
+        subtotal_paise=0,
+        total_paise=0,
+    )
+    for requested in request.items:
+        product = products[requested.product_id]
+        if requested.quantity > product.stock:
+            raise CommerceError(
+                409,
+                "INSUFFICIENT_STOCK",
+                f"Only {product.stock} units of {product.id} are available",
+            )
+        line_total = product.price_paise * requested.quantity
+        cart.items.append(
+            CartItem(
+                product_id=product.id,
+                product_name=product.name,
+                product_version=product.version,
+                quantity=requested.quantity,
+                unit_price_paise=product.price_paise,
+                line_total_paise=line_total,
+            )
+        )
+        cart.subtotal_paise += line_total
+    cart.total_paise = cart.subtotal_paise
+    session.add(cart)
+    session.commit()
+    return load_cart(session, cart.id)
+
+
+def _catalog_matches(session: Session, cart: Cart) -> bool:
+    products = {
+        product.id: product
+        for product in session.scalars(
+            select(Product).where(Product.id.in_([item.product_id for item in cart.items]))
+        )
+    }
+    return all(
+        (product := products.get(item.product_id)) is not None
+        and product.version == item.product_version
+        and product.price_paise == item.unit_price_paise
+        and product.stock >= item.quantity
+        for item in cart.items
+    )
+
+
+def canonical_cart(cart: Cart) -> bytes:
+    payload = {
+        "cart_id": cart.id,
+        "currency": cart.currency,
+        "items": [
+            {
+                "product_id": item.product_id,
+                "product_version": item.product_version,
+                "quantity": item.quantity,
+                "unit_price_paise": item.unit_price_paise,
+                "line_total_paise": item.line_total_paise,
+            }
+            for item in sorted(cart.items, key=lambda value: value.product_id)
+        ],
+        "subtotal_paise": cart.subtotal_paise,
+        "total_paise": cart.total_paise,
+        "version": cart.version,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def freeze_cart(session: Session, cart_id: str, now: datetime | None = None) -> Cart:
+    now = now or utc_now()
+    cart = load_cart(session, cart_id)
+    if cart.status == "frozen" and cart.expires_at and cart.expires_at > now:
+        return cart
+    if cart.status != "proposed":
+        raise CommerceError(409, "INVALID_CART_STATE", f"Cannot freeze a {cart.status} cart")
+    if not _catalog_matches(session, cart):
+        cart.status = "invalidated"
+        session.commit()
+        raise CommerceError(409, "CART_CHANGED", "Price or stock changed; rebuild the cart")
+
+    cart.cart_hash = hashlib.sha256(canonical_cart(cart)).hexdigest()
+    cart.status = "frozen"
+    cart.frozen_at = now
+    cart.expires_at = now + FREEZE_DURATION
+    session.commit()
+    return load_cart(session, cart.id)
+
+
+def approve_cart(
+    session: Session,
+    cart_id: str,
+    supplied_hash: str,
+    now: datetime | None = None,
+) -> Cart:
+    now = now or utc_now()
+    cart = load_cart(session, cart_id)
+    if cart.status != "frozen":
+        raise CommerceError(409, "INVALID_CART_STATE", f"Cannot approve a {cart.status} cart")
+    if not cart.expires_at or cart.expires_at <= now:
+        cart.status = "expired"
+        session.commit()
+        raise CommerceError(409, "CART_EXPIRED", "The frozen cart expired; review it again")
+    if not cart.cart_hash or supplied_hash != cart.cart_hash:
+        raise CommerceError(409, "CART_HASH_MISMATCH", "Approval does not match the frozen cart")
+
+    cart.status = "approved"
+    cart.approved_at = now
+    session.commit()
+    return load_cart(session, cart.id)
+
+
+def create_order(
+    session: Session,
+    request: CreateOrderRequest,
+    now: datetime | None = None,
+) -> Order:
+    now = now or utc_now()
+    existing = session.scalar(select(Order).where(Order.idempotency_key == request.idempotency_key))
+    if existing:
+        if existing.cart_id != request.cart_id or existing.cart_hash != request.cart_hash:
+            raise CommerceError(
+                409,
+                "IDEMPOTENCY_KEY_REUSED",
+                "This idempotency key belongs to a different order request",
+            )
+        return existing
+
+    cart = load_cart(session, request.cart_id)
+    if cart.status != "approved":
+        raise CommerceError(409, "INVALID_CART_STATE", f"Cannot order a {cart.status} cart")
+    if not cart.expires_at or cart.expires_at <= now:
+        cart.status = "expired"
+        session.commit()
+        raise CommerceError(409, "CART_EXPIRED", "The approved cart expired")
+    if not cart.cart_hash or cart.cart_hash != request.cart_hash:
+        raise CommerceError(409, "CART_HASH_MISMATCH", "Order does not match the approved cart")
+    if not _catalog_matches(session, cart):
+        cart.status = "invalidated"
+        session.commit()
+        raise CommerceError(409, "CART_CHANGED", "Price or stock changed; approval is invalid")
+
+    claimed = session.execute(
+        update(Cart)
+        .where(Cart.id == cart.id, Cart.status == "approved", Cart.version == cart.version)
+        .values(status="ordered", version=Cart.version + 1)
+    )
+    if claimed.rowcount != 1:
+        session.rollback()
+        recovered = session.scalar(
+            select(Order).where(Order.idempotency_key == request.idempotency_key)
+        )
+        if (
+            recovered
+            and recovered.cart_id == request.cart_id
+            and recovered.cart_hash == request.cart_hash
+        ):
+            return recovered
+        raise CommerceError(409, "ORDER_ALREADY_CLAIMED", "Another request claimed this cart")
+
+    order = Order(
+        id=str(uuid4()),
+        cart_id=cart.id,
+        idempotency_key=request.idempotency_key,
+        status="payment_pending",
+        currency=cart.currency,
+        total_paise=cart.total_paise,
+        cart_hash=cart.cart_hash,
+    )
+    session.add(order)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        recovered = session.scalar(
+            select(Order).where(Order.idempotency_key == request.idempotency_key)
+        )
+        if recovered and recovered.cart_id == request.cart_id:
+            return recovered
+        raise CommerceError(409, "ORDER_CONFLICT", "The cart already has an order") from None
+    return order
+
+
+def bind_provider_order(session: Session, order_id: str, provider_order_id: str) -> Order:
+    order = session.get(Order, order_id)
+    if order is None:
+        raise CommerceError(404, "ORDER_NOT_FOUND", "Order not found")
+    if order.status != "payment_pending":
+        raise CommerceError(409, "INVALID_ORDER_STATE", "Only pending orders can be bound")
+    if order.provider_order_id and order.provider_order_id != provider_order_id:
+        raise CommerceError(409, "PROVIDER_ORDER_MISMATCH", "Provider order is already bound")
+    order.provider_order_id = provider_order_id
+    session.commit()
+    return order
+
+
+@dataclass(frozen=True)
+class PaymentEvidence:
+    provider_event_id: str
+    event_type: str
+    provider_order_id: str
+    provider_payment_id: str
+    amount_paise: int
+    currency: str
+    signature_verified: bool
+    captured: bool
+
+
+def finalise_payment(
+    session: Session,
+    order_id: str,
+    evidence: PaymentEvidence,
+    now: datetime | None = None,
+) -> tuple[Order, PaymentEvent]:
+    now = now or utc_now()
+    duplicate = session.get(PaymentEvent, evidence.provider_event_id)
+    if duplicate:
+        return duplicate.order, duplicate
+
+    order = session.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if order is None:
+        raise CommerceError(404, "ORDER_NOT_FOUND", "Order not found")
+
+    evidence_payload = json.dumps(evidence.__dict__, sort_keys=True, separators=(",", ":"))
+    payload_hash = hashlib.sha256(evidence_payload.encode()).hexdigest()
+    accepted = False
+    reason = "verification_failed"
+
+    if not evidence.signature_verified:
+        reason = "signature_invalid"
+    elif not evidence.captured:
+        reason = "payment_not_captured"
+    elif order.provider_order_id != evidence.provider_order_id:
+        reason = "provider_order_mismatch"
+    elif order.total_paise != evidence.amount_paise or order.currency != evidence.currency:
+        reason = "amount_or_currency_mismatch"
+    elif order.status == "paid" and order.provider_payment_id == evidence.provider_payment_id:
+        accepted = True
+        reason = "already_finalised"
+    elif order.status != "payment_pending":
+        reason = "invalid_order_state"
+    else:
+        result = session.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.status == "payment_pending")
+            .values(
+                status="paid",
+                provider_payment_id=evidence.provider_payment_id,
+                paid_at=now,
+            )
+        )
+        accepted = result.rowcount == 1
+        reason = "verified" if accepted else "already_claimed"
+
+    event = PaymentEvent(
+        provider_event_id=evidence.provider_event_id,
+        order_id=order.id,
+        event_type=evidence.event_type,
+        accepted=accepted,
+        reason=reason,
+        payload_hash=payload_hash,
+    )
+    session.add(event)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        duplicate = session.get(PaymentEvent, evidence.provider_event_id)
+        if duplicate:
+            return duplicate.order, duplicate
+        raise
+    return session.get(Order, order.id), event

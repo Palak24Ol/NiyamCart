@@ -3,11 +3,21 @@ from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .catalog import seed_catalog
+from .commerce import CommerceError, approve_cart, create_cart, create_order, freeze_cart, load_cart
+from .commerce_models import Order
+from .commerce_schemas import (
+    ApproveCartRequest,
+    CartResponse,
+    CreateCartRequest,
+    CreateOrderRequest,
+    OrderResponse,
+)
 from .database import Database
 from .models import Product
 from .schemas import HealthResponse, ProductListResponse, ProductResponse
@@ -35,6 +45,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
         yield from db.session()
 
     SessionDependency = Annotated[Session, Depends(get_session)]
+
+    @app.exception_handler(CommerceError)
+    async def commerce_error_handler(_: Request, error: CommerceError) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"error": error.code, "message": error.message},
+        )
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
@@ -66,6 +83,37 @@ def create_app(database_url: str | None = None) -> FastAPI:
         if product is None:
             raise HTTPException(status_code=404, detail="Product not found")
         return product
+
+    @app.post("/api/carts", response_model=CartResponse, status_code=201, tags=["commerce"])
+    def create_cart_route(request: CreateCartRequest, session: SessionDependency):
+        return create_cart(session, request)
+
+    @app.get("/api/carts/{cart_id}", response_model=CartResponse, tags=["commerce"])
+    def get_cart_route(cart_id: str, session: SessionDependency):
+        return load_cart(session, cart_id)
+
+    @app.post("/api/carts/{cart_id}/freeze", response_model=CartResponse, tags=["commerce"])
+    def freeze_cart_route(cart_id: str, session: SessionDependency):
+        return freeze_cart(session, cart_id)
+
+    @app.post("/api/carts/{cart_id}/approve", response_model=CartResponse, tags=["commerce"])
+    def approve_cart_route(
+        cart_id: str,
+        request: ApproveCartRequest,
+        session: SessionDependency,
+    ):
+        return approve_cart(session, cart_id, request.cart_hash)
+
+    @app.post("/api/orders", response_model=OrderResponse, status_code=201, tags=["commerce"])
+    def create_order_route(request: CreateOrderRequest, session: SessionDependency):
+        return create_order(session, request)
+
+    @app.get("/api/orders/{order_id}", response_model=OrderResponse, tags=["commerce"])
+    def get_order_route(order_id: str, session: SessionDependency):
+        order = session.get(Order, order_id)
+        if order is None:
+            raise CommerceError(404, "ORDER_NOT_FOUND", "Order not found")
+        return order
 
     return app
 

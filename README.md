@@ -17,6 +17,10 @@ The clean frontend/backend foundation is implemented with:
 - Responsive desktop and mobile layouts.
 - FastAPI health and catalogue endpoints backed by SQLAlchemy.
 - SQLite for zero-config local development; `DATABASE_URL` remains configurable.
+- Authoritatively priced carts with a deterministic 15-minute freeze.
+- SHA-256 binding between the exact cart, human approval, and order.
+- Database-enforced cart/order states and idempotency constraints.
+- Duplicate-safe payment evidence finalisation with amount and currency verification.
 
 The assistant response is intentionally simulated in this first frontend checkpoint. The bounded OpenAI tool loop and deterministic backend are built in later phases.
 
@@ -40,6 +44,16 @@ python -m uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
 Open `http://localhost:8000/docs` for the local API explorer.
+
+## Deterministic commerce flow
+
+1. `POST /api/carts` reprices requested products from authoritative catalogue data.
+2. `POST /api/carts/{id}/freeze` rechecks price and stock, then creates a 15-minute SHA-256 cart hash.
+3. `POST /api/carts/{id}/approve` accepts only the exact, unexpired hash.
+4. `POST /api/orders` accepts only an approved cart and requires an idempotency key.
+5. Payment evidence is finalised internally only after signature, capture, provider order, amount, and currency checks.
+
+The public API exposes no raw-card or CVV fields. Razorpay API wiring is added in the dedicated integration phase; the state machine and verification boundary already exist.
 
 ## Verify
 

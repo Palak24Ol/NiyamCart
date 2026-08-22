@@ -28,14 +28,14 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 2 - Money and payment safety
 
-- [ ] Delete raw card/CVV collection and synthetic capture shortcuts.
-- [ ] Convert all money fields and APIs to integer paise.
-- [ ] Add cart and order state machines.
-- [ ] Add database-level idempotency constraints.
-- [ ] Add order-creation idempotency key.
-- [ ] Add row lock or conditional finalisation update.
-- [ ] Test duplicate callback and webhook races.
-- [ ] Test invalid state regressions.
+- [x] Delete raw card/CVV collection and synthetic capture shortcuts.
+- [x] Convert all money fields and APIs to integer paise.
+- [x] Add cart and order state machines.
+- [x] Add database-level idempotency constraints.
+- [x] Add order-creation idempotency key.
+- [x] Add row lock or conditional finalisation update.
+- [x] Test duplicate callback and webhook races.
+- [x] Test invalid state regressions.
 
 ## Phase 3 - Machine-readable merchant
 
@@ -68,16 +68,16 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 5 - Cart approval
 
-- [ ] Re-price cart from authoritative product data.
+- [x] Re-price cart from authoritative product data.
 - [ ] Re-check inventory and compatibility.
-- [ ] Canonically serialise cart.
-- [ ] Generate SHA-256 cart hash.
-- [ ] Freeze cart for fifteen minutes.
-- [ ] Require explicit approval of exact hash.
-- [ ] Reject expired cart.
-- [ ] Reject mutated cart.
-- [ ] Reject unapproved cart.
-- [ ] Require re-approval after any change.
+- [x] Canonically serialise cart.
+- [x] Generate SHA-256 cart hash.
+- [x] Freeze cart for fifteen minutes.
+- [x] Require explicit approval of exact hash.
+- [x] Reject expired cart.
+- [x] Reject mutated cart.
+- [x] Reject unapproved cart.
+- [x] Require re-approval after any change.
 
 ## Phase 6 - Razorpay
 

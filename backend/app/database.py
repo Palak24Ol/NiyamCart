@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -12,6 +12,12 @@ class Database:
     def __init__(self, url: str) -> None:
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         self.engine = create_engine(url, connect_args=connect_args)
+        if url.startswith("sqlite"):
+            event.listen(
+                self.engine,
+                "connect",
+                lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"),
+            )
         self.session_factory = sessionmaker(
             bind=self.engine,
             class_=Session,
