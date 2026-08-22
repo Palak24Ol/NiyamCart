@@ -3,11 +3,12 @@ from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from .agent_contracts import build_agent_catalog, build_agent_policy, payload_etag
 from .catalog import seed_catalog
 from .commerce import CommerceError, approve_cart, create_cart, create_order, freeze_cart, load_cart
 from .commerce_models import Order
@@ -20,6 +21,7 @@ from .commerce_schemas import (
 )
 from .database import Database
 from .models import Product
+from .policy import PolicyDecision, PolicyEvaluationRequest, evaluate_policy
 from .schemas import HealthResponse, ProductListResponse, ProductResponse
 
 
@@ -114,6 +116,28 @@ def create_app(database_url: str | None = None) -> FastAPI:
         if order is None:
             raise CommerceError(404, "ORDER_NOT_FOUND", "Order not found")
         return order
+
+    @app.get("/.well-known/agent-catalog.json", tags=["agent contracts"])
+    def agent_catalog_route(request: Request, session: SessionDependency) -> Response:
+        payload = build_agent_catalog(session)
+        etag = payload_etag(payload)
+        headers = {"ETag": etag, "Cache-Control": "public, max-age=60"}
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+
+    @app.get("/.well-known/agent-policy.json", tags=["agent contracts"])
+    def agent_policy_route(request: Request) -> Response:
+        payload = build_agent_policy()
+        etag = payload_etag(payload)
+        headers = {"ETag": etag, "Cache-Control": "public, max-age=300"}
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers=headers)
+        return JSONResponse(content=payload, headers=headers)
+
+    @app.post("/api/policy/evaluate", response_model=PolicyDecision, tags=["policy"])
+    def evaluate_policy_route(request: PolicyEvaluationRequest) -> PolicyDecision:
+        return evaluate_policy(request)
 
     return app
 

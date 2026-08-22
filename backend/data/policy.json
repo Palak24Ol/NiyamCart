@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "2026-08-22.1",
+  "merchant_id": "niyamcart-demo",
+  "default_decision": "allow",
+  "limits": {
+    "currency": "INR",
+    "max_line_quantity": 10,
+    "max_cart_items": 20,
+    "escalate_above_paise": 500000,
+    "cart_ttl_seconds": 900
+  },
+  "rules": [
+    {
+      "id": "POL-DENY-AUTONOMOUS-PAYMENT",
+      "decision": "deny",
+      "description": "An AI agent cannot create, approve, capture, or verify a payment.",
+      "condition": {
+        "field": "action",
+        "operator": "in",
+        "value": ["create_payment", "approve_payment", "capture_payment", "verify_payment"]
+      }
+    },
+    {
+      "id": "POL-DENY-CURRENCY",
+      "decision": "deny",
+      "description": "NiyamCart accepts only Indian rupees in this merchant configuration.",
+      "condition": {"field": "currency", "operator": "not_equal", "value": "INR"}
+    },
+    {
+      "id": "POL-DENY-LINE-QUANTITY",
+      "decision": "deny",
+      "description": "No cart line may contain more than ten units.",
+      "condition": {"field": "max_line_quantity", "operator": "greater_than", "value": 10}
+    },
+    {
+      "id": "POL-DENY-CART-SIZE",
+      "decision": "deny",
+      "description": "A proposed cart may contain at most twenty distinct products.",
+      "condition": {"field": "line_count", "operator": "greater_than", "value": 20}
+    },
+    {
+      "id": "POL-ESCALATE-HIGH-VALUE",
+      "decision": "escalate",
+      "description": "Carts above ₹5,000 require explicit high-value review.",
+      "condition": {"field": "total_paise", "operator": "greater_than", "value": 500000}
+    },
+    {
+      "id": "POL-ESCALATE-UNKNOWN-ACTION",
+      "decision": "escalate",
+      "description": "Unsupported commerce actions require human review.",
+      "condition": {
+        "field": "action",
+        "operator": "not_in",
+        "value": ["recommend", "propose_cart", "checkout"]
+      }
+    },
+    {
+      "id": "POL-ALLOW-BOUNDED-COMMERCE",
+      "decision": "allow",
+      "description": "The request is within the merchant's bounded commerce policy.",
+      "condition": {"field": "default", "operator": "always", "value": true}
+    }
+  ]
+}

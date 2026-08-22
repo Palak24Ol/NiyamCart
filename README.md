@@ -55,6 +55,17 @@ Open `http://localhost:8000/docs` for the local API explorer.
 
 The public API exposes no raw-card or CVV fields. Razorpay API wiring is added in the dedicated integration phase; the state machine and verification boundary already exist.
 
+## Agent-readable merchant
+
+NiyamCart publishes stable machine contracts for AI buyers:
+
+- `GET /.well-known/agent-catalog.json` — all 500 products with integer-paise prices, availability, attributes, compatibility tags, grounded complements, policy references, catalogue version, and ETag.
+- `GET /.well-known/agent-policy.json` — seven ordered allow/deny/escalate rules with IDs and explanations.
+- `POST /api/policy/evaluate` — deterministic evaluation of a proposed commerce action.
+- `merchant.yaml` — merchant identity, endpoints, limits, payment boundary, and the exact six supported agent actions.
+
+Both well-known endpoints support conditional requests through `If-None-Match` and return `304 Not Modified` when unchanged. Their JSON Schemas live in `backend/schemas/`.
+
 ## Verify
 
 ```bash

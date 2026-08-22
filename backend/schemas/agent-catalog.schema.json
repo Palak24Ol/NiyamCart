@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://niyamcart.local/schemas/agent-catalog.schema.json",
+  "title": "NiyamCart Agent Catalogue",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "catalog_version", "merchant", "products"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "catalog_version": {"type": "string", "minLength": 1},
+    "merchant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "currency", "human_approval_required"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "currency": {"const": "INR"},
+        "human_approval_required": {"const": true}
+      }
+    },
+    "products": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/product"}
+    }
+  },
+  "$defs": {
+    "money": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount_paise", "currency"],
+      "properties": {
+        "amount_paise": {"type": "integer", "minimum": 0},
+        "currency": {"const": "INR"}
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_id", "version", "name", "brand", "category", "description",
+        "price", "availability", "attributes", "compatibility", "policy_refs", "image"
+      ],
+      "properties": {
+        "product_id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "name": {"type": "string", "minLength": 1},
+        "brand": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "price": {"$ref": "#/$defs/money"},
+        "original_price": {"$ref": "#/$defs/money"},
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["in_stock", "quantity", "delivery_days"],
+          "properties": {
+            "in_stock": {"type": "boolean"},
+            "quantity": {"type": "integer", "minimum": 0},
+            "delivery_days": {"type": "integer", "minimum": 0}
+          }
+        },
+        "attributes": {"type": "object"},
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tags", "complements"],
+          "properties": {
+            "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+            "complements": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+          }
+        },
+        "policy_refs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "image": {"type": "string", "pattern": "^/catalog/"}
+      }
+    }
+  }
+}

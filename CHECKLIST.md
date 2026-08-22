@@ -39,16 +39,16 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Phase 3 - Machine-readable merchant
 
-- [ ] Define catalogue JSON Schema.
-- [ ] Define policy JSON Schema.
-- [ ] Create `merchant.yaml`.
-- [ ] Implement `/.well-known/agent-catalog.json`.
-- [ ] Implement `/.well-known/agent-policy.json`.
-- [ ] Add catalogue version and ETag.
-- [ ] Add compatibility tags.
-- [ ] Add allow/deny/escalate policy engine.
-- [ ] Add policy rule IDs and explanations.
-- [ ] Test catalogue and policy contracts.
+- [x] Define catalogue JSON Schema.
+- [x] Define policy JSON Schema.
+- [x] Create `merchant.yaml`.
+- [x] Implement `/.well-known/agent-catalog.json`.
+- [x] Implement `/.well-known/agent-policy.json`.
+- [x] Add catalogue version and ETag.
+- [x] Add compatibility tags.
+- [x] Add allow/deny/escalate policy engine.
+- [x] Add policy rule IDs and explanations.
+- [x] Test catalogue and policy contracts.
 
 ## Phase 4 - Agent loop
 

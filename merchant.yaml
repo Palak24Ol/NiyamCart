@@ -1,0 +1,31 @@
+schema_version: "1.0"
+merchant:
+  id: niyamcart-demo
+  name: NiyamCart
+  description: AI shopping, within your rules.
+  currency: INR
+  locale: en-IN
+commerce:
+  catalog_url: /.well-known/agent-catalog.json
+  policy_url: /.well-known/agent-policy.json
+  policy_evaluation_url: /api/policy/evaluate
+  cart_ttl_seconds: 900
+  max_line_quantity: 10
+  max_cart_items: 20
+  human_approval_required: true
+payment:
+  provider: razorpay
+  mode: test
+  agent_can_create_payment: false
+  agent_can_approve_payment: false
+  agent_can_verify_payment: false
+agent:
+  max_steps: 8
+  max_revisions: 2
+  supported_actions:
+    - search_catalog
+    - get_product_details
+    - find_compatible_addons
+    - get_policy
+    - propose_cart
+    - escalate_to_human
