@@ -415,6 +415,8 @@ def run_agent(
     provider: AgentProvider | None = None,
     config: AgentConfig | None = None,
     agent_session: AgentSession | None = None,
+    original_message: str | None = None,
+    language_code: str = "en-IN",
 ) -> AgentRunResponse:
     config = config or AgentConfig.from_env()
     if agent_session is None:
@@ -428,7 +430,10 @@ def run_agent(
         db.add(agent_session)
         db.commit()
     prior_context = _conversation_context(db, agent_session)
-    _add_event(db, agent_session, "user_message", {"text": message})
+    user_payload: dict[str, object] = {"text": message, "language_code": language_code}
+    if original_message and original_message != message:
+        user_payload["original_text"] = original_message
+    _add_event(db, agent_session, "user_message", user_payload)
 
     if _autonomous_payment_request(message):
         decision = evaluate_policy(PolicyEvaluationRequest(action="create_payment"))

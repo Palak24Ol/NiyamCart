@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 class AgentRunRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+    original_message: str | None = Field(default=None, min_length=1, max_length=2000)
+    language_code: str | None = Field(default=None, min_length=2, max_length=16)
+    script_code: str | None = Field(default=None, min_length=4, max_length=8)
+    message_is_normalized: bool = False
+    synthesize_audio: bool = False
 
 
 class AgentEventResponse(BaseModel):
@@ -29,6 +34,13 @@ class AgentRunResponse(BaseModel):
     revision_count: int
     estimated_cost_microusd: int
     recommended_product_ids: list[str] = Field(default_factory=list, max_length=8)
+    language_code: str = "en-IN"
+    script_code: str | None = None
+    input_text: str | None = None
+    audio_base64: str | None = None
+    audio_mime_type: str | None = None
+    localization_status: Literal["original", "localized", "unavailable"] = "original"
+    voice_status: Literal["not_requested", "ready", "unavailable"] = "not_requested"
 
 
 class AgentAuditResponse(BaseModel):

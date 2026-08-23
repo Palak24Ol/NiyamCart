@@ -7,6 +7,29 @@ export type AgentRun = {
   revision_count: number;
   estimated_cost_microusd: number;
   recommended_product_ids: string[];
+  language_code: string;
+  script_code: string | null;
+  input_text: string | null;
+  audio_base64: string | null;
+  audio_mime_type: string | null;
+  localization_status: "original" | "localized" | "unavailable";
+  voice_status: "not_requested" | "ready" | "unavailable";
+};
+
+export type AgentRunOptions = {
+  originalMessage?: string;
+  languageCode?: string;
+  scriptCode?: string;
+  messageIsNormalized?: boolean;
+  synthesizeAudio?: boolean;
+};
+
+export type VoiceTranscript = {
+  transcript: string;
+  normalized_text: string;
+  language_code: string;
+  script_code: string | null;
+  language_probability: number | null;
 };
 
 export type AgentEvent = {
@@ -71,17 +94,48 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export const runAgent = (message: string) =>
+const agentBody = (message: string, options: AgentRunOptions = {}) => ({
+  message,
+  original_message: options.originalMessage,
+  language_code: options.languageCode,
+  script_code: options.scriptCode,
+  message_is_normalized: options.messageIsNormalized || false,
+  synthesize_audio: options.synthesizeAudio || false,
+});
+
+export const runAgent = (message: string, options: AgentRunOptions = {}) =>
   api<AgentRun>("/api/agent/sessions", {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(agentBody(message, options)),
   });
 
-export const continueAgent = (sessionId: string, message: string) =>
+export const continueAgent = (
+  sessionId: string,
+  message: string,
+  options: AgentRunOptions = {},
+) =>
   api<AgentRun>(`/api/agent/sessions/${sessionId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(agentBody(message, options)),
   });
+
+export async function transcribeVoice(audio: Blob): Promise<VoiceTranscript> {
+  const response = await fetch(`${API_BASE}/api/voice/transcribe`, {
+    method: "POST",
+    headers: { "content-type": audio.type || "audio/webm" },
+    body: audio,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.message || body.detail || "Niyam could not understand that recording.");
+  }
+  return body as VoiceTranscript;
+}
+
+export const audioDataUrl = (run: AgentRun) =>
+  run.audio_base64 && run.audio_mime_type
+    ? `data:${run.audio_mime_type};base64,${run.audio_base64}`
+    : null;
 
 export const getAgentAudit = (sessionId: string) =>
   api<AgentAudit>(`/api/agent/sessions/${sessionId}/events`);

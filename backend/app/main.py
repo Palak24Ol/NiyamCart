@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
@@ -41,7 +41,13 @@ from .razorpay_service import (
     process_razorpay_webhook,
     verify_checkout_payment,
 )
+from .sarvam_service import PreparedText, SarvamError, SarvamProvider, configured_sarvam
 from .schemas import HealthResponse, ProductListResponse, ProductResponse
+from .voice_schemas import (
+    SpeechSynthesisRequest,
+    SpeechSynthesisResponse,
+    VoiceTranscriptionResponse,
+)
 from .whatsapp_delivery import WhatsAppSender, configured_sender
 from .whatsapp_schemas import (
     WhatsAppConfirmationRequest,
@@ -62,6 +68,7 @@ def create_app(
     razorpay_gateway: RazorpayGateway | None = None,
     whatsapp_settings: WhatsAppSettings | None = None,
     whatsapp_sender: WhatsAppSender | None = None,
+    sarvam_provider: SarvamProvider | None = None,
 ) -> FastAPI:
     db = Database(database_url or os.getenv("DATABASE_URL", "sqlite:///./niyamcart.db"))
     gateway = razorpay_gateway if razorpay_gateway is not None else configured_gateway()
@@ -71,6 +78,7 @@ def create_app(
         if whatsapp_sender is not None
         else (configured_sender() if whatsapp_settings is None else None)
     )
+    speech = sarvam_provider if sarvam_provider is not None else configured_sarvam()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -97,6 +105,7 @@ def create_app(
     app.state.razorpay_gateway = gateway
     app.state.whatsapp_settings = handoff_settings
     app.state.whatsapp_sender = handoff_sender
+    app.state.sarvam_provider = speech
 
     def get_session() -> Generator[Session, None, None]:
         yield from db.session()
@@ -112,6 +121,13 @@ def create_app(
 
     @app.exception_handler(RazorpayError)
     async def razorpay_error_handler(_: Request, error: RazorpayError) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"error": error.code, "message": error.message},
+        )
+
+    @app.exception_handler(SarvamError)
+    async def sarvam_error_handler(_: Request, error: SarvamError) -> JSONResponse:
         return JSONResponse(
             status_code=error.status_code,
             content={"error": error.code, "message": error.message},
@@ -235,11 +251,83 @@ def create_app(
     def evaluate_policy_route(request: PolicyEvaluationRequest) -> PolicyDecision:
         return evaluate_policy(request)
 
+    def prepare_agent_text(request: AgentRunRequest) -> PreparedText:
+        original = request.original_message or request.message
+        if request.message_is_normalized:
+            return PreparedText(
+                original,
+                request.message,
+                request.language_code or "en-IN",
+                request.script_code,
+            )
+        if app.state.sarvam_provider is None:
+            return PreparedText(original, request.message, request.language_code or "en-IN")
+        try:
+            return app.state.sarvam_provider.prepare_text(
+                request.message,
+                request.language_code,
+                request.script_code,
+            )
+        except SarvamError:
+            return PreparedText(original, request.message, request.language_code or "en-IN")
+
+    def localize_agent_result(
+        result: AgentRunResponse,
+        prepared: PreparedText,
+        synthesize_audio: bool,
+    ) -> AgentRunResponse:
+        result.language_code = prepared.language_code
+        result.script_code = prepared.script_code
+        result.input_text = prepared.original_text
+        provider = app.state.sarvam_provider
+        if provider is None:
+            if synthesize_audio:
+                result.voice_status = "unavailable"
+            return result
+        try:
+            localized = provider.localize(
+                result.answer,
+                prepared.language_code,
+                prepared.script_code,
+            )
+            result.answer = localized
+            result.localization_status = (
+                "original" if prepared.language_code == "en-IN" else "localized"
+            )
+        except SarvamError:
+            result.localization_status = "unavailable"
+        if synthesize_audio:
+            try:
+                result.audio_base64, result.audio_mime_type = provider.synthesize(
+                    result.answer,
+                    prepared.language_code,
+                )
+                result.voice_status = "ready"
+            except SarvamError:
+                result.voice_status = "unavailable"
+        return result
+
+    def execute_agent_request(
+        request: AgentRunRequest,
+        session: Session,
+        agent_session: AgentSession | None = None,
+    ) -> AgentRunResponse:
+        prepared = prepare_agent_text(request)
+        result = run_agent(
+            session,
+            prepared.normalized_text,
+            config=AgentConfig.from_env(),
+            agent_session=agent_session,
+            original_message=prepared.original_text,
+            language_code=prepared.language_code,
+        )
+        return localize_agent_result(result, prepared, request.synthesize_audio)
+
     @app.post(
         "/api/agent/sessions", response_model=AgentRunResponse, status_code=201, tags=["agent"]
     )
     def create_agent_session(request: AgentRunRequest, session: SessionDependency):
-        return run_agent(session, request.message)
+        return execute_agent_request(request, session)
 
     @app.post(
         "/api/agent/sessions/{session_id}/messages",
@@ -255,11 +343,54 @@ def create_app(
         agent_session.revision_count += 1
         agent_session.status = "running"
         session.commit()
-        return run_agent(
-            session,
-            request.message,
-            config=AgentConfig.from_env(),
-            agent_session=agent_session,
+        return execute_agent_request(request, session, agent_session)
+
+    @app.post(
+        "/api/voice/transcribe",
+        response_model=VoiceTranscriptionResponse,
+        tags=["voice"],
+    )
+    def transcribe_voice(
+        audio: Annotated[bytes, Body(media_type="application/octet-stream")],
+        content_type: Annotated[str | None, Header()] = None,
+    ) -> VoiceTranscriptionResponse:
+        provider = app.state.sarvam_provider
+        if provider is None:
+            raise SarvamError(
+                "SARVAM_NOT_CONFIGURED",
+                "Voice chat is not configured; typed chat is still available.",
+                status_code=503,
+            )
+        prepared = provider.transcribe(audio, content_type or "application/octet-stream")
+        return VoiceTranscriptionResponse(
+            transcript=prepared.original_text,
+            normalized_text=prepared.normalized_text,
+            language_code=prepared.language_code,
+            script_code=prepared.script_code,
+            language_probability=prepared.language_probability,
+        )
+
+    @app.post(
+        "/api/voice/synthesize",
+        response_model=SpeechSynthesisResponse,
+        tags=["voice"],
+    )
+    def synthesize_voice(request: SpeechSynthesisRequest) -> SpeechSynthesisResponse:
+        provider = app.state.sarvam_provider
+        if provider is None:
+            raise SarvamError(
+                "SARVAM_NOT_CONFIGURED",
+                "Spoken answers are not configured; the text answer remains available.",
+                status_code=503,
+            )
+        audio_base64, audio_mime_type = provider.synthesize(
+            request.text,
+            request.language_code,
+        )
+        return SpeechSynthesisResponse(
+            audio_base64=audio_base64,
+            audio_mime_type=audio_mime_type,
+            language_code=request.language_code,
         )
 
     @app.get(

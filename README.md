@@ -130,6 +130,19 @@ The only model-callable tools are catalog search, product details, compatible ad
 lookup, proposed-cart creation, and human escalation. Order creation, approval, checkout, and
 payment are intentionally absent.
 
+## Multilingual voice shopping
+
+Niyam accepts typed or spoken shopping requests in 11 Indian languages. Sarvam handles speech
+recognition, language detection, translation, and answer speech; the bounded commerce agent still
+runs the same six catalogue and policy tools against an English canonical query. The visible answer
+is returned in the shopper's detected language, while product cards retain authoritative catalogue
+names, prices, stock, and add-to-cart actions.
+
+Set `SARVAM_VOICE_ENABLED=true` and `SARVAM_API_KEY` in `.env`. Optional defaults are
+`SARVAM_STT_MODEL=saaras:v3`, `SARVAM_TTS_MODEL=bulbul:v3`, and
+`SARVAM_TTS_SPEAKER=shubh`. The key is server-only. Voice recordings are capped in the browser at
+25 seconds and are sent directly to Sarvam for processing; Niyam does not save the audio.
+
 ## Evaluation
 
 NiyamCart includes versioned development, held-out, and 12-case adversarial splits plus keyword,

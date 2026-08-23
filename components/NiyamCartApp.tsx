@@ -12,23 +12,29 @@ import {
   Copy,
   LoaderCircle,
   MessageCircle,
+  Mic,
   Minus,
   Plus,
   Search,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
+  Square,
   Star,
   Trash2,
   UserRound,
+  Volume2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney, formatSpecLabel, products, searchProducts, type Product } from "@/lib/catalog";
 import {
+  audioDataUrl,
   continueAgent,
   getProposedCart,
   runAgent,
+  transcribeVoice,
+  type AgentRunOptions,
   type AgentRun,
 } from "@/lib/agent";
 import {
@@ -43,7 +49,21 @@ import {
 } from "@/lib/whatsapp";
 
 type Cart = Record<string, number>;
-type ChatTurn = { id: string; prompt: string; result: AgentRun };
+type ChatTurn = { id: string; prompt: string; result: AgentRun; voiceInput: boolean };
+
+const languageNames: Record<string, string> = {
+  "bn-IN": "বাংলা",
+  "en-IN": "English",
+  "gu-IN": "ગુજરાતી",
+  "hi-IN": "हिन्दी",
+  "kn-IN": "ಕನ್ನಡ",
+  "ml-IN": "മലയാളം",
+  "mr-IN": "मराठी",
+  "od-IN": "ଓଡ଼ିଆ",
+  "pa-IN": "ਪੰਜਾਬੀ",
+  "ta-IN": "தமிழ்",
+  "te-IN": "తెలుగు",
+};
 
 const suggestions = [
   "Build a festive outfit under ₹1,500",
@@ -62,9 +82,17 @@ export function NiyamCartApp() {
   const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
+  const [voiceProcessing, setVoiceProcessing] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const categories = ["All", ...Array.from(new Set(products.map((item) => item.category)))];
   const categoryProducts = products.filter(
@@ -95,21 +123,36 @@ export function NiyamCartApp() {
     });
   };
 
-  const askAgent = async (prompt = agentQuery) => {
-    const message = prompt.trim();
+  const askAgent = async (
+    prompt = agentQuery,
+    options: AgentRunOptions & { normalizedMessage?: string; voiceInput?: boolean } = {},
+  ) => {
+    const displayMessage = prompt.trim();
+    const message = (options.normalizedMessage || displayMessage).trim();
     if (!message || agentLoading) return;
     setAgentQuery("");
-    setPendingPrompt(message);
+    setPendingPrompt(displayMessage);
     setAgentLoading(true);
     setAgentError(null);
     try {
       const result = agentSessionId
-        ? await continueAgent(agentSessionId, message)
-        : await runAgent(message);
+        ? await continueAgent(agentSessionId, message, {
+            ...options,
+            originalMessage: options.originalMessage || displayMessage,
+          })
+        : await runAgent(message, {
+            ...options,
+            originalMessage: options.originalMessage || displayMessage,
+          });
       setAgentSessionId(result.session_id);
       setChatTurns((current) => [
         ...current,
-        { id: `${result.session_id}:${result.revision_count}`, prompt: message, result },
+        {
+          id: `${result.session_id}:${result.revision_count}`,
+          prompt: displayMessage,
+          result,
+          voiceInput: Boolean(options.voiceInput),
+        },
       ]);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Niyam is temporarily unavailable.");
@@ -118,6 +161,100 @@ export function NiyamCartApp() {
       setAgentLoading(false);
     }
   };
+
+  const clearRecordingResources = () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordingStopRef.current) clearTimeout(recordingStopRef.current);
+    recordingTimerRef.current = null;
+    recordingStopRef.current = null;
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceStreamRef.current = null;
+    recorderRef.current = null;
+  };
+
+  const processVoiceRecording = async (blob: Blob) => {
+    setVoiceProcessing(true);
+    setAgentError(null);
+    try {
+      const transcript = await transcribeVoice(blob);
+      setVoiceProcessing(false);
+      await askAgent(transcript.transcript, {
+        normalizedMessage: transcript.normalized_text,
+        originalMessage: transcript.transcript,
+        languageCode: transcript.language_code,
+        scriptCode: transcript.script_code || undefined,
+        messageIsNormalized: true,
+        synthesizeAudio: true,
+        voiceInput: true,
+      });
+    } catch (error) {
+      setVoiceProcessing(false);
+      setAgentError(
+        error instanceof Error ? error.message : "Niyam could not process that recording.",
+      );
+    }
+  };
+
+  const startVoiceQuestion = async () => {
+    if (agentLoading || voiceProcessing || recording) return;
+    setAgentError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setAgentError("Voice recording is not supported in this browser. You can still type.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"]
+        .find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : {});
+      recorderRef.current = recorder;
+      voiceStreamRef.current = stream;
+      voiceChunksRef.current = [];
+      setRecordingSeconds(0);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) voiceChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(voiceChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        clearRecordingResources();
+        setRecording(false);
+        if (blob.size < 100) {
+          setAgentError("That recording was too short. Please try again.");
+          return;
+        }
+        void processVoiceRecording(blob);
+      };
+      recorder.start(250);
+      setRecording(true);
+      recordingTimerRef.current = setInterval(
+        () => setRecordingSeconds((seconds) => seconds + 1),
+        1000,
+      );
+      recordingStopRef.current = setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, 25_000);
+    } catch (error) {
+      clearRecordingResources();
+      setRecording(false);
+      setAgentError(
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "Microphone permission was not granted. You can still type your request."
+          : "The microphone could not be started. Please try again.",
+      );
+    }
+  };
+
+  const stopVoiceQuestion = () => {
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+  };
+
+  useEffect(() => () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordingStopRef.current) clearTimeout(recordingStopRef.current);
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
 
   const reviewAgentCart = async (cartId: string) => {
     setAgentError(null);
@@ -238,7 +375,7 @@ export function NiyamCartApp() {
       {agentOpen && (
         <aside className="agent-panel" id="agent" aria-label="Niyam AI assistant">
           <div className="panel-header">
-            <div className="agent-identity"><span><Bot size={20} /></span><div><b>Niyam</b><small><i /> {agentLoading ? "Working within your rules" : "Ready to help"}</small></div></div>
+            <div className="agent-identity"><span><Bot size={20} /></span><div><b>Niyam</b><small><i /> {recording ? `Listening · 0:${String(recordingSeconds).padStart(2, "0")}` : voiceProcessing ? "Understanding your voice" : agentLoading ? "Working within your rules" : "Ready to help"}</small></div></div>
             <button onClick={() => setAgentOpen(false)} aria-label="Close assistant"><X size={19} /></button>
           </div>
           <div className="agent-body">
@@ -248,24 +385,35 @@ export function NiyamCartApp() {
               const recommended = turn.result.recommended_product_ids
                 .map((id) => products.find((product) => product.id === id))
                 .filter((product): product is Product => Boolean(product));
+              const answerAudio = audioDataUrl(turn.result);
+              const languageName = languageNames[turn.result.language_code];
               return (
                 <div className="chat-turn" key={turn.id}>
-                  <div className="user-message">{turn.prompt}</div>
+                  <div className="user-message">{turn.voiceInput && <Mic size={13} aria-hidden="true" />} {turn.prompt}</div>
                   {turn.result.status === "degraded" && <div className="agent-state degraded-state" role="status"><ShieldCheck size={18} /><div><b>Safe fallback used</b><small>The AI provider was unavailable. These matches came from deterministic catalogue search.</small></div></div>}
-                  <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> GROUNDED RESPONSE</span><p>{turn.result.answer}</p>{turn.result.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart(turn.result.proposed_cart_id!)}>Review proposed cart <ArrowRight size={15} /></button>}</div>
+                  <div className="assistant-message">
+                    <div className="answer-meta"><span className="reason-label"><Sparkles size={13} /> GROUNDED RESPONSE</span>{languageName && languageName !== "English" && <span className="language-badge">{languageName}</span>}</div>
+                    <p>{turn.result.answer}</p>
+                    {answerAudio && <audio className="voice-answer" src={answerAudio} controls autoPlay={turn.voiceInput} preload="metadata">Your browser cannot play this response.</audio>}
+                    {turn.voiceInput && !answerAudio && turn.result.voice_status === "unavailable" && <small className="voice-note"><Volume2 size={13} /> Text response shown because speech playback was unavailable.</small>}
+                    {turn.result.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart(turn.result.proposed_cart_id!)}>Review proposed cart <ArrowRight size={15} /></button>}
+                  </div>
                   {!!recommended.length && <ProductRecommendationCarousel products={recommended} cart={cart} updateCart={updateCart} onOpen={setSelectedProduct} />}
                 </div>
               );
             })}
             {pendingPrompt && <div className="user-message">{pendingPrompt}</div>}
+            {recording && <div className="agent-state recording-state" role="status" aria-live="polite"><Mic size={18} /><div><b>Listening… 0:{String(recordingSeconds).padStart(2, "0")}</b><small>Speak naturally in your preferred language, then tap stop.</small></div></div>}
+            {voiceProcessing && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>Understanding your voice</b><small>Detecting the language and preparing a catalogue-safe request.</small></div></div>}
             {agentLoading && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>{chatTurns.length ? "Refining your recommendations" : "Checking the live catalogue"}</b><small>Niyam remembers this conversation, but cannot order or pay.</small></div></div>}
             {agentError && <div className="agent-state error-state" role="alert"><CircleX size={18} /><div><b>Request not completed</b><small>{agentError}</small></div></div>}
           </div>
           <div className="agent-input">
-            <input value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !agentLoading && void askAgent()} placeholder="Describe what you need…" disabled={agentLoading} aria-label="Shopping request" />
-            <button onClick={() => void askAgent()} aria-label="Send" disabled={agentLoading || !agentQuery.trim()}>{agentLoading ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}</button>
+            <button className={`voice-button${recording ? " recording" : ""}`} onClick={recording ? stopVoiceQuestion : () => void startVoiceQuestion()} aria-label={recording ? "Stop voice recording" : "Start voice recording"} aria-pressed={recording} disabled={agentLoading || voiceProcessing} title={recording ? "Stop recording" : "Speak in your language"}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>
+            <input value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !agentLoading && !voiceProcessing && !recording && void askAgent()} placeholder={recording ? "Listening…" : "Type or speak in your language…"} disabled={agentLoading || voiceProcessing || recording} aria-label="Shopping request" />
+            <button className="send-button" onClick={() => void askAgent()} aria-label="Send" disabled={agentLoading || voiceProcessing || recording || !agentQuery.trim()}>{agentLoading ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}</button>
           </div>
-          <div className="panel-safety"><ShieldCheck size={13} /> Niyam cannot purchase without your approval</div>
+          <div className="panel-safety"><ShieldCheck size={13} /> 11 languages · No purchase without your approval</div>
         </aside>
       )}
 
