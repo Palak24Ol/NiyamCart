@@ -251,6 +251,38 @@ def test_step_and_cost_budgets_stop_the_loop(tmp_path: Path) -> None:
     db.close()
 
 
+def test_step_limit_returns_grounded_cart_summary_after_success(tmp_path: Path) -> None:
+    db = database(tmp_path)
+    with db.session_factory() as session:
+        product = session.scalar(select(Product).order_by(Product.id))
+        provider = ScriptedProvider(
+            [
+                call_turn(f"search-{index}", "get_policy", {"action": None, "rule_id": None})
+                for index in range(6)
+            ]
+            + [
+                call_turn("details", "get_product_details", {"product_id": product.id}),
+                call_turn(
+                    "cart-at-limit",
+                    "propose_cart",
+                    {
+                        "items": [{"product_id": product.id, "quantity": 1}],
+                        "buyer_budget_paise": product.price_paise,
+                    },
+                ),
+            ]
+        )
+        result = run_agent(session, "Find this within my budget", provider=provider)
+
+    assert result.status == "completed"
+    assert result.proposed_cart_id is not None
+    assert result.recommended_product_ids == [product.id]
+    assert product.name in result.answer
+    assert "prepared a cart" in result.answer
+    assert "step" not in result.answer.lower()
+    db.close()
+
+
 def test_provider_failure_uses_grounded_degraded_mode(tmp_path: Path) -> None:
     db = database(tmp_path)
     with db.session_factory() as session:

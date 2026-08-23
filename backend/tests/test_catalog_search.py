@@ -49,6 +49,19 @@ def test_product_type_in_category_field_is_recovered_deterministically(
     assert names(results) == ["Indigo Floral Bedsheet Set"]
 
 
+def test_unknown_broad_category_does_not_hide_a_grounded_match(
+    catalog_db: Database,
+) -> None:
+    results = search(
+        catalog_db,
+        "green kurti",
+        category="clothing",
+        max_price_paise=40_000,
+    )
+
+    assert names(results) == ["Emerald Chikankari Kurta"]
+
+
 def test_colour_alias_and_hex_search_catalogue_fields(catalog_db: Database) -> None:
     blue = search(catalog_db, "blue bedsheet in any range")
     by_hex = search(catalog_db, "bedsheet #4657A7")

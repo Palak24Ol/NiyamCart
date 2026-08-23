@@ -34,6 +34,8 @@ Treat later user messages as refinements of the same shopping request unless the
 new request. Preserve earlier product, budget, audience, occasion, and specification constraints.
 Search the catalogue for every stated constraint; the search tool understands natural price phrases
 and matches all stored catalogue fields, including colour, size chart, care, and specifications.
+Once a search returns a product that satisfies the stated constraints, do not repeat the search with
+synonymous or guessed categories. Inspect the best match and finish the requested cart or answer.
 The interface renders returned products as visual cards, so use short plain sentences and never
 output Markdown tables or long product lists.
 """
@@ -412,6 +414,89 @@ def _autonomous_payment_request(message: str) -> bool:
     return financial and autonomous
 
 
+def _finish_at_step_limit(db: Session, agent_session: AgentSession) -> AgentRunResponse:
+    events = list(
+        db.scalars(
+            select(AgentEvent)
+            .where(AgentEvent.session_id == agent_session.id)
+            .order_by(AgentEvent.sequence)
+        )
+    )
+    last_user_sequence = max(
+        (event.sequence for event in events if event.event_type == "user_message"),
+        default=0,
+    )
+    grounded_products: list[dict[str, object]] = []
+    cart_result: dict[str, object] | None = None
+    for event in events:
+        if event.sequence <= last_user_sequence or event.event_type != "tool_result":
+            continue
+        payload = event.payload
+        if isinstance(payload.get("cart_id"), str):
+            cart_result = payload
+        candidates: object = payload.get("products", [])
+        if isinstance(payload.get("product"), dict):
+            candidates = [payload["product"]]
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            if not isinstance(candidate, dict) or not isinstance(candidate.get("product_id"), str):
+                continue
+            already_grounded = any(
+                item.get("product_id") == candidate["product_id"]
+                for item in grounded_products
+            )
+            if not already_grounded:
+                grounded_products.append(candidate)
+
+    cart_product_ids = {
+        item["product_id"]
+        for item in (cart_result or {}).get("items", [])
+        if isinstance(item, dict) and isinstance(item.get("product_id"), str)
+    }
+    product = next(
+        (
+            item
+            for item in reversed(grounded_products)
+            if not cart_product_ids or item.get("product_id") in cart_product_ids
+        ),
+        None,
+    )
+    if cart_result is not None:
+        total_paise = cart_result.get("total_paise")
+        total = (
+            f"₹{int(total_paise) / 100:,.2f}".replace(".00", "")
+            if isinstance(total_paise, int)
+            else "the verified catalogue total"
+        )
+        product_name = str(product.get("name")) if product else "a grounded catalogue match"
+        answer = (
+            f"I found {product_name} and prepared a cart totalling {total} for your review. "
+            "Nothing is purchased until you approve the exact cart."
+        )
+        return _finish(db, agent_session, "completed", answer)
+    if product is not None:
+        price_paise = product.get("price_paise")
+        price = (
+            f"₹{int(price_paise) / 100:,.2f}".replace(".00", "")
+            if isinstance(price_paise, int)
+            else "the listed price"
+        )
+        return _finish(
+            db,
+            agent_session,
+            "completed",
+            f"I found {product['name']} for {price}. No cart was created.",
+        )
+    return _finish(
+        db,
+        agent_session,
+        "budget_exhausted",
+        "I couldn’t complete a grounded recommendation this time. "
+        "Please try a shorter request; no cart, order, or payment was created.",
+    )
+
+
 def run_agent(
     db: Session,
     message: str,
@@ -550,12 +635,7 @@ def run_agent(
                     f"This needs human review: {result['reason']}. No financial action was taken.",
                 )
 
-    return _finish(
-        db,
-        agent_session,
-        "budget_exhausted",
-        "I stopped at the eight-step safety limit. No payment or order was made.",
-    )
+    return _finish_at_step_limit(db, agent_session)
 
 
 def load_agent_session(db: Session, session_id: str) -> AgentSession | None:

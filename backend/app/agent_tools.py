@@ -68,6 +68,7 @@ def search_catalog(db: Session, args: SearchCatalogArgs) -> dict[str, object]:
     catalog = list(db.scalars(select(Product)))
     query = args.query.strip()
     category = args.category.strip() if args.category else None
+    search_queries = [query]
     if category:
         def category_key(value: str) -> str:
             return " ".join(
@@ -87,20 +88,25 @@ def search_catalog(db: Session, args: SearchCatalogArgs) -> dict[str, object]:
         )
         if known_category is None:
             # Models sometimes place a product type (for example "bedsheet") in the category
-            # argument. Treat it as another required search term instead of applying an impossible
-            # exact category filter. This keeps equivalent translated and English requests aligned.
+            # argument. Try it as a search term first, then ignore it if it is merely a broad label
+            # such as "clothing". This avoids an impossible exact category filter while preserving
+            # useful constraints such as product type.
             if category.casefold() not in query.casefold():
-                query = f"{query} {category}"
+                search_queries = [f"{query} {category}", query]
             category = None
         else:
             category = known_category
-    matches = search_products(
-        catalog,
-        query,
-        category=category,
-        min_price_paise=args.min_price_paise,
-        max_price_paise=args.max_price_paise,
-    )[: args.limit]
+    matches = []
+    for candidate_query in search_queries:
+        matches = search_products(
+            catalog,
+            candidate_query,
+            category=category,
+            min_price_paise=args.min_price_paise,
+            max_price_paise=args.max_price_paise,
+        )[: args.limit]
+        if matches:
+            break
     products = []
     for match in matches:
         data = _product_data(match.product)
@@ -206,6 +212,9 @@ def propose_cart(db: Session, args: ProposeCartArgs) -> dict[str, object]:
         "status": cart.status,
         "total_paise": cart.total_paise,
         "currency": cart.currency,
+        "items": [
+            {"product_id": item.product_id, "quantity": item.quantity} for item in args.items
+        ],
         "requires_exact_human_approval": True,
     }
 
