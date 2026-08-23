@@ -5,8 +5,9 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleHelp,
-  CircleCheckBig,
   CircleX,
   Copy,
   LoaderCircle,
@@ -20,20 +21,15 @@ import {
   Star,
   Trash2,
   UserRound,
-  Wrench,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { formatMoney, products, type Product } from "@/lib/catalog";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { formatMoney, formatSpecLabel, products, type Product } from "@/lib/catalog";
 import {
-  getAgentAudit,
+  continueAgent,
   getProposedCart,
-  getVerifiedAudit,
-  groundedProducts,
   runAgent,
-  type AgentAudit,
   type AgentRun,
-  type VerifiedAudit,
 } from "@/lib/agent";
 import {
   approveAndOpenCheckout,
@@ -47,6 +43,7 @@ import {
 } from "@/lib/whatsapp";
 
 type Cart = Record<string, number>;
+type ChatTurn = { id: string; prompt: string; result: AgentRun };
 
 const suggestions = [
   "Build a festive outfit under ₹1,500",
@@ -61,12 +58,12 @@ export function NiyamCartApp() {
   const [cartOpen, setCartOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(true);
   const [agentQuery, setAgentQuery] = useState("");
-  const [agentAnswer, setAgentAnswer] = useState<string | null>(null);
-  const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
-  const [agentAudit, setAgentAudit] = useState<AgentAudit | null>(null);
-  const [verifiedAudit, setVerifiedAudit] = useState<VerifiedAudit | null>(null);
+  const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
 
   const categories = ["All", ...Array.from(new Set(products.map((item) => item.category)))];
@@ -100,47 +97,39 @@ export function NiyamCartApp() {
   };
 
   const askAgent = async (prompt = agentQuery) => {
-    if (!prompt.trim()) return;
-    setAgentQuery(prompt);
+    const message = prompt.trim();
+    if (!message || agentLoading) return;
+    setAgentQuery("");
+    setPendingPrompt(message);
     setAgentLoading(true);
     setAgentError(null);
-    setAgentAnswer(null);
-    setAgentRun(null);
-    setAgentAudit(null);
-    setVerifiedAudit(null);
     try {
-      const result = await runAgent(prompt.trim());
-      setAgentRun(result);
-      setAgentAnswer(result.answer);
-      const [events, audit] = await Promise.all([
-        getAgentAudit(result.session_id),
-        getVerifiedAudit(result.session_id),
+      const result = agentSessionId
+        ? await continueAgent(agentSessionId, message)
+        : await runAgent(message);
+      setAgentSessionId(result.session_id);
+      setChatTurns((current) => [
+        ...current,
+        { id: `${result.session_id}:${result.revision_count}`, prompt: message, result },
       ]);
-      setAgentAudit(events);
-      setVerifiedAudit(audit);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Niyam is temporarily unavailable.");
     } finally {
+      setPendingPrompt(null);
       setAgentLoading(false);
     }
   };
 
-  const reviewAgentCart = async () => {
-    if (!agentRun?.proposed_cart_id) return;
+  const reviewAgentCart = async (cartId: string) => {
     setAgentError(null);
     try {
-      const proposed = await getProposedCart(agentRun.proposed_cart_id);
+      const proposed = await getProposedCart(cartId);
       setCart(Object.fromEntries(proposed.items.map((item) => [item.product_id, item.quantity])));
       setCartOpen(true);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "The proposed cart is unavailable.");
     }
   };
-
-  const recommendations = groundedProducts(agentAudit?.events || []);
-  const visibleAgentEvents = (agentAudit?.events || []).filter(
-    (event) => event.event_type !== "model_response" && event.event_type !== "user_message",
-  );
 
   return (
     <div className="app-shell">
@@ -222,7 +211,7 @@ export function NiyamCartApp() {
 
           <div className="product-grid">
             {displayedProducts.map((product) => (
-              <ProductCard product={product} quantity={cart[product.id] || 0} updateCart={updateCart} key={product.id} />
+              <ProductCard product={product} quantity={cart[product.id] || 0} updateCart={updateCart} onOpen={setSelectedProduct} key={product.id} />
             ))}
           </div>
           {displayedProducts.length < visibleProducts.length && (
@@ -255,18 +244,23 @@ export function NiyamCartApp() {
           </div>
           <div className="agent-body">
             <div className="assistant-message"><b>Hi, I’m Niyam.</b><p>Tell me what you’re shopping for, your budget and what matters most. I’ll explain every choice.</p></div>
-            {!agentAnswer && !agentLoading && <div className="quick-prompts">{suggestions.map((item) => <button onClick={() => void askAgent(item)} key={item}>{item}<ArrowRight size={14} /></button>)}</div>}
-            {agentLoading && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>Checking the live catalogue</b><small>Niyam may use bounded tools, but cannot order or pay.</small></div></div>}
+            {!chatTurns.length && !agentLoading && <div className="quick-prompts">{suggestions.map((item) => <button onClick={() => void askAgent(item)} key={item}>{item}<ArrowRight size={14} /></button>)}</div>}
+            {chatTurns.map((turn) => {
+              const recommended = turn.result.recommended_product_ids
+                .map((id) => products.find((product) => product.id === id))
+                .filter((product): product is Product => Boolean(product));
+              return (
+                <div className="chat-turn" key={turn.id}>
+                  <div className="user-message">{turn.prompt}</div>
+                  {turn.result.status === "degraded" && <div className="agent-state degraded-state" role="status"><ShieldCheck size={18} /><div><b>Safe fallback used</b><small>The AI provider was unavailable. These matches came from deterministic catalogue search.</small></div></div>}
+                  <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> GROUNDED RESPONSE</span><p>{turn.result.answer}</p>{turn.result.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart(turn.result.proposed_cart_id!)}>Review proposed cart <ArrowRight size={15} /></button>}</div>
+                  {!!recommended.length && <ProductRecommendationCarousel products={recommended} cart={cart} updateCart={updateCart} onOpen={setSelectedProduct} />}
+                </div>
+              );
+            })}
+            {pendingPrompt && <div className="user-message">{pendingPrompt}</div>}
+            {agentLoading && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>{chatTurns.length ? "Refining your recommendations" : "Checking the live catalogue"}</b><small>Niyam remembers this conversation, but cannot order or pay.</small></div></div>}
             {agentError && <div className="agent-state error-state" role="alert"><CircleX size={18} /><div><b>Request not completed</b><small>{agentError}</small></div></div>}
-            {agentAnswer && (
-              <>
-                <div className="user-message">{agentQuery}</div>
-                {agentRun?.status === "degraded" && <div className="agent-state degraded-state" role="status"><ShieldCheck size={18} /><div><b>Safe fallback used</b><small>The AI provider was unavailable. Results below came from deterministic catalogue search.</small></div></div>}
-                <div className="assistant-message"><span className="reason-label"><Sparkles size={13} /> GROUNDED RESPONSE</span><p>{agentAnswer}</p>{agentRun?.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart()}>Review proposed cart <ArrowRight size={15} /></button>}</div>
-                {!!recommendations.length && <div className="grounded-results" aria-label="Products returned by catalogue tools"><b>Catalogue evidence</b>{recommendations.map((item) => <div key={item.product_id}><span><strong>{item.name}</strong><small>{item.product_id} · {item.stock} in stock</small></span><b>{formatMoney(item.price_paise)}</b></div>)}</div>}
-                {!!visibleAgentEvents.length && <details className="audit-timeline" open><summary><span><Wrench size={14} /> Tool activity & audit</span>{verifiedAudit?.valid ? <em className="verified"><CircleCheckBig size={13} /> Verified</em> : <em className="unverified"><CircleX size={13} /> Unverified</em>}</summary><ol>{visibleAgentEvents.map((event) => <li key={event.sequence}><span>{event.sequence}</span><div><b>{event.tool_name || event.event_type.replaceAll("_", " ")}</b><small>{event.event_type === "tool_call" ? "Bounded tool requested" : event.event_type === "tool_result" ? "Typed result recorded" : event.event_type === "policy_decision" ? String(event.payload.rule_id || "Policy evaluated") : event.event_type === "final_answer" ? "Response completed" : "Event recorded"}</small></div></li>)}</ol>{verifiedAudit && <code title={verifiedAudit.root_hash}>Root {verifiedAudit.root_hash}</code>}<p>Only actions and typed results are shown. Hidden model reasoning is never exposed.</p></details>}
-              </>
-            )}
           </div>
           <div className="agent-input">
             <input value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !agentLoading && void askAgent()} placeholder="Describe what you need…" disabled={agentLoading} aria-label="Shopping request" />
@@ -277,17 +271,17 @@ export function NiyamCartApp() {
       )}
 
       {cartOpen && <CartDrawer key={cartLines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|")} lines={cartLines} subtotal={subtotal} updateCart={updateCart} close={() => setCartOpen(false)} />}
+      {selectedProduct && <ProductDetail product={selectedProduct} quantity={cart[selectedProduct.id] || 0} updateCart={updateCart} close={() => setSelectedProduct(null)} />}
     </div>
   );
 }
 
-function ProductCard({ product, quantity, updateCart }: { product: Product; quantity: number; updateCart: (id: string, delta: number) => void }) {
+function ProductCard({ product, quantity, updateCart, onOpen }: { product: Product; quantity: number; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void }) {
   return (
-    <article className="product-card">
+    <article className="product-card" role="button" tabIndex={0} aria-label={`View ${product.name}`} onClick={() => onOpen(product)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpen(product); }}>
       <div className="product-visual" style={{ background: product.accent }}>
         {product.badge && <span className="product-badge">{product.badge}</span>}
         <img className="product-image" src={product.image} alt={product.name} loading="lazy" />
-        <button className="view-button">Quick view</button>
       </div>
       <div className="product-info">
         <span className="product-category">{product.category}</span>
@@ -297,13 +291,77 @@ function ProductCard({ product, quantity, updateCart }: { product: Product; quan
         <div className="product-bottom">
           <div className="price"><strong>{formatMoney(product.pricePaise)}</strong>{product.originalPricePaise && <del>{formatMoney(product.originalPricePaise)}</del>}</div>
           {quantity ? (
-            <div className="quantity-control"><button onClick={() => updateCart(product.id, -1)}><Minus size={15} /></button><b>{quantity}</b><button onClick={() => updateCart(product.id, 1)}><Plus size={15} /></button></div>
+            <div className="quantity-control"><button onClick={(event) => { event.stopPropagation(); updateCart(product.id, -1); }} aria-label={`Remove one ${product.name}`}><Minus size={15} /></button><b>{quantity}</b><button onClick={(event) => { event.stopPropagation(); updateCart(product.id, 1); }} aria-label={`Add another ${product.name}`}><Plus size={15} /></button></div>
           ) : (
-            <button className="add-button" onClick={() => updateCart(product.id, 1)}><Plus size={17} /> Add</button>
+            <button className="add-button" onClick={(event) => { event.stopPropagation(); updateCart(product.id, 1); }}><Plus size={17} /> Add</button>
           )}
         </div>
       </div>
     </article>
+  );
+}
+
+function ProductRecommendationCarousel({ products: recommended, cart, updateCart, onOpen }: { products: Product[]; cart: Cart; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void }) {
+  const rail = useRef<HTMLDivElement>(null);
+  const move = (direction: number) => rail.current?.scrollBy({ left: direction * 240, behavior: "smooth" });
+  return (
+    <section className="recommendation-block" aria-label="Niyam product recommendations">
+      <div className="recommendation-heading"><div><b>Recommended for you</b><small>{recommended.length} grounded matches</small></div><span><button onClick={() => move(-1)} aria-label="Previous recommendations"><ChevronLeft size={15} /></button><button onClick={() => move(1)} aria-label="Next recommendations"><ChevronRight size={15} /></button></span></div>
+      <div className="recommendation-rail" ref={rail}>
+        {recommended.map((product) => {
+          const quantity = cart[product.id] || 0;
+          return (
+            <article className="recommendation-card" key={product.id}>
+              <button className="recommendation-open" onClick={() => onOpen(product)} aria-label={`View ${product.name}`}>
+                <img src={product.image} alt={product.name} />
+                <span className="product-category">{product.category}</span>
+                <strong>{product.name}</strong>
+                <small><Star size={11} fill="currentColor" /> {product.rating} · {product.stock} in stock</small>
+                <b>{formatMoney(product.pricePaise)}</b>
+              </button>
+              {quantity ? <div className="recommendation-quantity"><button onClick={() => updateCart(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={13} /></button><b>{quantity}</b><button onClick={() => updateCart(product.id, 1)} aria-label={`Add another ${product.name}`}><Plus size={13} /></button></div> : <button className="recommendation-add" onClick={() => updateCart(product.id, 1)}><Plus size={14} /> Add to cart</button>}
+            </article>
+          );
+        })}
+      </div>
+      <small className="swipe-hint">Swipe or use the arrows to compare recommendations.</small>
+    </section>
+  );
+}
+
+function ProductDetail({ product, quantity, updateCart, close }: { product: Product; quantity: number; updateCart: (id: string, delta: number) => void; close: () => void }) {
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => event.key === "Escape" && close();
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [close]);
+  return (
+    <div className="product-detail-layer" role="presentation">
+      <button className="product-detail-backdrop" onClick={close} aria-label="Close product details" />
+      <section className="product-detail" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
+        <header><div><span className="kicker">CATALOGUE PRODUCT</span><h2 id="product-detail-title">{product.name}</h2></div><button onClick={close} aria-label="Close product details"><X size={20} /></button></header>
+        <div className="product-detail-body">
+          <div className="product-detail-gallery" style={{ background: product.accent }}><img src={product.image} alt={product.name} /><span><ShieldCheck size={14} /> Catalogue verified</span></div>
+          <div className="product-detail-copy">
+            <p className="product-detail-brand">{product.brand} · {product.category}</p>
+            <div className="product-detail-price"><strong>{formatMoney(product.pricePaise)}</strong>{product.originalPricePaise > product.pricePaise && <del>{formatMoney(product.originalPricePaise)}</del>}</div>
+            <div className="rating"><Star size={14} fill="currentColor" /><b>{product.rating}</b><span>{product.reviews.toLocaleString("en-IN")} reviews</span></div>
+            <p className="product-detail-description">{product.description}</p>
+            <div className="detail-badges">{product.badges.map((badge) => <span key={badge}><Check size={12} /> {badge}</span>)}</div>
+            <section className="detail-section"><h3>Product specifications</h3><dl className="detail-specs">
+              <div><dt>Material</dt><dd>{product.material}</dd></div>
+              <div><dt>Best for</dt><dd>{product.occasion}</dd></div>
+              <div><dt>Delivery</dt><dd>{product.deliveryDays}–{product.deliveryDays + 2} days{product.freeDelivery ? " · Free" : ""}</dd></div>
+              <div><dt>Returns</dt><dd>{product.returnWindowDays} days</dd></div>
+              {Object.entries(product.specs).map(([key, value]) => <div key={key}><dt>{formatSpecLabel(key)}</dt><dd>{key === "color_hex" && typeof value === "string" && <i className="detail-swatch" style={{ background: value }} />}{String(value)}</dd></div>)}
+            </dl></section>
+            {!!product.highlights.length && <section className="detail-section"><h3>Why it stands out</h3><ul className="detail-highlights">{product.highlights.map((highlight) => <li key={highlight}><Check size={13} /> {highlight}</li>)}</ul></section>}
+            {product.sizeChart && <section className="detail-section"><h3>Size chart</h3><div className="size-table-wrap"><table><thead><tr><th>Size</th>{Array.from(new Set(Object.values(product.sizeChart).flatMap((row) => Object.keys(row)))).map((key) => <th key={key}>{formatSpecLabel(key)} (cm)</th>)}</tr></thead><tbody>{Object.entries(product.sizeChart).map(([size, values]) => <tr key={size}><th>{size}</th>{Array.from(new Set(Object.values(product.sizeChart!).flatMap((row) => Object.keys(row)))).map((key) => <td key={key}>{values[key] ?? "—"}</td>)}</tr>)}</tbody></table></div></section>}
+          </div>
+        </div>
+        <footer><div><small>{product.stock} units available</small><b>{formatMoney(product.pricePaise)}</b></div>{quantity ? <div className="quantity-control detail-quantity"><button onClick={() => updateCart(product.id, -1)}><Minus size={16} /></button><b>{quantity}</b><button onClick={() => updateCart(product.id, 1)}><Plus size={16} /></button></div> : <button className="primary-button" onClick={() => updateCart(product.id, 1)}><ShoppingBag size={17} /> Add to cart</button>}</footer>
+      </section>
+    </div>
   );
 }
 

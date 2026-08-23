@@ -15,6 +15,7 @@ from .agent_models import AgentEvent, AgentSession
 from .agent_schemas import AgentRunResponse, SearchCatalogArgs
 from .agent_tools import TOOL_DEFINITIONS, ToolError, execute_tool, search_catalog
 from .audit import append_audit, redact
+from .models import Product
 from .policy import PolicyEvaluationRequest, evaluate_policy
 
 SYSTEM_INSTRUCTIONS = """You are NiyamCart's bounded shopping assistant.
@@ -29,6 +30,10 @@ Amounts are integer paise. Every proposed cart requires exact human review and a
 If required facts are unavailable or policy disallows the request, abstain or escalate.
 Never invent facts.
 Keep the final answer concise and mention the relevant policy rule when refusing.
+Treat later user messages as refinements of the same shopping request unless they clearly start a
+new request. Preserve earlier product, budget, audience, occasion, and specification constraints.
+The interface renders returned products as visual cards, so use short plain sentences and never
+output Markdown tables or long product lists.
 """
 
 
@@ -38,7 +43,7 @@ class AgentConfig:
     model: str = "gpt-5.6-luna"
     reasoning_effort: str = "low"
     max_steps: int = 8
-    max_revisions: int = 2
+    max_revisions: int = 8
     max_cost_microusd: int = 3000
 
     @classmethod
@@ -56,7 +61,7 @@ class AgentConfig:
             model=model,
             reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "low"),
             max_steps=min(max(int(os.getenv("AGENT_MAX_STEPS", "8")), 1), 8),
-            max_revisions=max(int(os.getenv("AGENT_MAX_CART_REVISIONS", "2")), 0),
+            max_revisions=min(max(int(os.getenv("AGENT_MAX_CART_REVISIONS", "8")), 0), 8),
             max_cost_microusd=max(int(os.getenv("AGENT_MAX_COST_MICROUSD", "3000")), 1),
         )
 
@@ -140,8 +145,13 @@ def _chat_messages(input_items: list[dict[str, object]]) -> list[dict[str, objec
         {"role": "system", "content": SYSTEM_INSTRUCTIONS}
     ]
     for item in input_items:
-        if item.get("role") == "user":
-            messages.append({"role": "user", "content": str(item.get("content", ""))})
+        if item.get("role") in {"user", "assistant"}:
+            messages.append(
+                {
+                    "role": str(item["role"]),
+                    "content": str(item.get("content", "")),
+                }
+            )
         elif item.get("type") == "chat_assistant":
             messages.append(
                 {
@@ -267,6 +277,38 @@ def _finish(
     agent_session.status = status
     _add_event(db, agent_session, "final_answer", {"text": answer, "status": status})
     db.commit()
+    events = list(
+        db.scalars(
+            select(AgentEvent)
+            .where(AgentEvent.session_id == agent_session.id)
+            .order_by(AgentEvent.sequence)
+        )
+    )
+    last_user_sequence = max(
+        (event.sequence for event in events if event.event_type == "user_message"),
+        default=0,
+    )
+    recommended_product_ids: list[str] = []
+    for event in events:
+        if event.sequence <= last_user_sequence or event.event_type != "tool_result":
+            continue
+        candidates = event.payload.get("products", [])
+        if event.payload.get("product"):
+            candidates = [event.payload["product"]]
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            product_id = candidate.get("product_id")
+            if (
+                isinstance(product_id, str)
+                and product_id not in recommended_product_ids
+                and db.get(Product, product_id) is not None
+            ):
+                recommended_product_ids.append(product_id)
+        if len(recommended_product_ids) >= 8:
+            break
     return AgentRunResponse(
         session_id=agent_session.id,
         status=status,
@@ -275,7 +317,31 @@ def _finish(
         step_count=agent_session.step_count,
         revision_count=agent_session.revision_count,
         estimated_cost_microusd=agent_session.estimated_cost_microusd,
+        recommended_product_ids=recommended_product_ids[:8],
     )
+
+
+def _conversation_context(db: Session, agent_session: AgentSession) -> list[dict[str, object]]:
+    events = db.scalars(
+        select(AgentEvent)
+        .where(
+            AgentEvent.session_id == agent_session.id,
+            AgentEvent.event_type.in_(["user_message", "final_answer"]),
+        )
+        .order_by(AgentEvent.sequence)
+    )
+    context: list[dict[str, object]] = []
+    for event in events:
+        text = event.payload.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        context.append(
+            {
+                "role": "user" if event.event_type == "user_message" else "assistant",
+                "content": text,
+            }
+        )
+    return context[-12:]
 
 
 def _estimated_cost(input_tokens: int, output_tokens: int, provider: str) -> int:
@@ -359,6 +425,7 @@ def run_agent(
         )
         db.add(agent_session)
         db.commit()
+    prior_context = _conversation_context(db, agent_session)
     _add_event(db, agent_session, "user_message", {"text": message})
 
     if _autonomous_payment_request(message):
@@ -381,9 +448,13 @@ def run_agent(
     if provider is None:
         return _degraded_answer(db, agent_session, message)
 
-    input_items: list[dict[str, object]] = [{"role": "user", "content": message}]
+    input_items: list[dict[str, object]] = [
+        *prior_context,
+        {"role": "user", "content": message},
+    ]
     repairs = 0
-    while agent_session.step_count < agent_session.max_steps:
+    turn_steps = 0
+    while turn_steps < agent_session.max_steps:
         try:
             turn = provider.respond(input_items)
         except Exception as error:
@@ -391,6 +462,7 @@ def run_agent(
             return _degraded_answer(db, agent_session, message)
 
         agent_session.step_count += 1
+        turn_steps += 1
         agent_session.input_tokens += turn.input_tokens
         agent_session.output_tokens += turn.output_tokens
         agent_session.estimated_cost_microusd += _estimated_cost(

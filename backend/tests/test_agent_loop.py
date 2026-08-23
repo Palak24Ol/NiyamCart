@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from app.agent_models import AgentEvent
+from app.agent_models import AgentEvent, AgentSession
 from app.agent_service import (
     AgentConfig,
     FunctionCall,
@@ -28,6 +28,16 @@ class ScriptedProvider:
 class FailingProvider:
     def respond(self, _: list[dict[str, object]]) -> ProviderTurn:
         raise TimeoutError("provider unavailable")
+
+
+class CapturingProvider:
+    def __init__(self, turn: ProviderTurn) -> None:
+        self.turn = turn
+        self.inputs: list[list[dict[str, object]]] = []
+
+    def respond(self, input_items: list[dict[str, object]]) -> ProviderTurn:
+        self.inputs.append(input_items)
+        return self.turn
 
 
 def call_turn(call_id: str, name: str, arguments: dict[str, object] | str) -> ProviderTurn:
@@ -113,6 +123,7 @@ def test_multi_step_agent_proposes_cart_and_persists_audit(tmp_path: Path) -> No
 
     assert result.status == "completed"
     assert result.proposed_cart_id
+    assert result.recommended_product_ids == [product.id]
     assert result.step_count == 4
     assert [event.sequence for event in events] == list(range(1, len(events) + 1))
     assert {event.event_type for event in events} >= {
@@ -122,6 +133,36 @@ def test_multi_step_agent_proposes_cart_and_persists_audit(tmp_path: Path) -> No
         "tool_result",
         "final_answer",
     }
+    db.close()
+
+
+def test_follow_up_replays_prior_user_and_assistant_context(tmp_path: Path) -> None:
+    db = database(tmp_path)
+    first_provider = ScriptedProvider(
+        [ProviderTurn(text="I found a cotton kurta.", calls=[], output_items=[])]
+    )
+    second_provider = CapturingProvider(
+        ProviderTurn(text="I kept it under the new budget.", calls=[], output_items=[])
+    )
+    with db.session_factory() as session:
+        first = run_agent(session, "Find a cotton kurta", provider=first_provider)
+        agent_session = session.get(AgentSession, first.session_id)
+        assert agent_session is not None
+        second = run_agent(
+            session,
+            "Keep it under 800 rupees",
+            provider=second_provider,
+            agent_session=agent_session,
+        )
+
+    assert second.status == "completed"
+    assert second_provider.inputs == [
+        [
+            {"role": "user", "content": "Find a cotton kurta"},
+            {"role": "assistant", "content": "I found a cotton kurta."},
+            {"role": "user", "content": "Keep it under 800 rupees"},
+        ]
+    ]
     db.close()
 
 

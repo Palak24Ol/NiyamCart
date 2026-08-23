@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Product
@@ -17,33 +17,35 @@ def load_catalog() -> list[dict[str, object]]:
 
 
 def seed_catalog(session: Session) -> None:
-    if session.scalar(select(func.count()).select_from(Product)):
-        return
-    session.add_all(
-        Product(
-            id=str(item["id"]),
-            name=str(item["name"]),
-            brand=str(item["brand"]),
-            category=str(item["category"]),
-            audience=str(item["audience"]),
-            description=str(item["description"]),
-            price_paise=int(item["pricePaise"]),
-            original_price_paise=int(item["originalPricePaise"]),
-            rating=float(item["rating"]),
-            reviews=int(item["reviews"]),
-            stock=int(item["stock"]),
-            delivery_days=int(item["deliveryDays"]),
-            free_delivery=bool(item["freeDelivery"]),
-            occasion=str(item["occasion"]),
-            material=str(item["material"]),
-            highlights=list(item["highlights"]),
-            badges=list(item["badges"]),
-            specs=dict(item["specs"]),
-            size_chart=item["sizeChart"],
-            return_window_days=int(item["returnWindowDays"]),
-            image=str(item["image"]),
-            version=int(item["version"]),
-        )
-        for item in load_catalog()
-    )
+    items = load_catalog()
+    existing = {product.id: product for product in session.scalars(select(Product))}
+    for item in items:
+        product_id = str(item["id"])
+        product = existing.get(product_id)
+        if product is None:
+            product = Product(id=product_id)
+            session.add(product)
+        elif product.version >= int(item["version"]):
+            continue
+        product.name = str(item["name"])
+        product.brand = str(item["brand"])
+        product.category = str(item["category"])
+        product.audience = str(item["audience"])
+        product.description = str(item["description"])
+        product.price_paise = int(item["pricePaise"])
+        product.original_price_paise = int(item["originalPricePaise"])
+        product.rating = float(item["rating"])
+        product.reviews = int(item["reviews"])
+        product.stock = int(item["stock"])
+        product.delivery_days = int(item["deliveryDays"])
+        product.free_delivery = bool(item["freeDelivery"])
+        product.occasion = str(item["occasion"])
+        product.material = str(item["material"])
+        product.highlights = list(item["highlights"])
+        product.badges = list(item["badges"])
+        product.specs = dict(item["specs"])
+        product.size_chart = item["sizeChart"]
+        product.return_window_days = int(item["returnWindowDays"])
+        product.image = str(item["image"])
+        product.version = int(item["version"])
     session.commit()

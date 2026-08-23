@@ -6,6 +6,7 @@ export type AgentRun = {
   step_count: number;
   revision_count: number;
   estimated_cost_microusd: number;
+  recommended_product_ids: string[];
 };
 
 export type AgentEvent = {
@@ -72,6 +73,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const runAgent = (message: string) =>
   api<AgentRun>("/api/agent/sessions", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+
+export const continueAgent = (sessionId: string, message: string) =>
+  api<AgentRun>(`/api/agent/sessions/${sessionId}/messages`, {
     method: "POST",
     body: JSON.stringify({ message }),
   });

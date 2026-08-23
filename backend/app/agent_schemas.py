@@ -28,6 +28,7 @@ class AgentRunResponse(BaseModel):
     step_count: int
     revision_count: int
     estimated_cost_microusd: int
+    recommended_product_ids: list[str] = Field(default_factory=list, max_length=8)
 
 
 class AgentAuditResponse(BaseModel):
