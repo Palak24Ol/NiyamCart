@@ -291,9 +291,13 @@ def _finish(
         default=0,
     )
     recommended_product_ids: list[str] = []
+    current_proposed_cart_id: str | None = None
     for event in events:
         if event.sequence <= last_user_sequence or event.event_type != "tool_result":
             continue
+        cart_id = event.payload.get("cart_id")
+        if isinstance(cart_id, str):
+            current_proposed_cart_id = cart_id
         candidates = event.payload.get("products", [])
         if event.payload.get("product"):
             candidates = [event.payload["product"]]
@@ -315,7 +319,7 @@ def _finish(
         session_id=agent_session.id,
         status=status,
         answer=answer,
-        proposed_cart_id=agent_session.proposed_cart_id,
+        proposed_cart_id=current_proposed_cart_id,
         step_count=agent_session.step_count,
         revision_count=agent_session.revision_count,
         estimated_cost_microusd=agent_session.estimated_cost_microusd,

@@ -166,6 +166,43 @@ def test_follow_up_replays_prior_user_and_assistant_context(tmp_path: Path) -> N
     db.close()
 
 
+def test_follow_up_without_new_cart_does_not_expose_stale_review_action(tmp_path: Path) -> None:
+    db = database(tmp_path)
+    with db.session_factory() as session:
+        product = session.scalar(select(Product).order_by(Product.id))
+        first = run_agent(
+            session,
+            "Prepare this product",
+            provider=ScriptedProvider(
+                [
+                    call_turn(
+                        "cart-1",
+                        "propose_cart",
+                        {
+                            "items": [{"product_id": product.id, "quantity": 1}],
+                            "buyer_budget_paise": product.price_paise,
+                        },
+                    ),
+                    ProviderTurn(text="Cart prepared.", calls=[], output_items=[]),
+                ]
+            ),
+        )
+        agent_session = session.get(AgentSession, first.session_id)
+        assert agent_session is not None
+        second = run_agent(
+            session,
+            "Try a different request",
+            provider=ScriptedProvider(
+                [ProviderTurn(text="No grounded match was found.", calls=[], output_items=[])]
+            ),
+            agent_session=agent_session,
+        )
+
+    assert first.proposed_cart_id is not None
+    assert second.proposed_cart_id is None
+    db.close()
+
+
 def test_only_one_malformed_tool_repair_is_allowed(tmp_path: Path) -> None:
     db = database(tmp_path)
     provider = ScriptedProvider(

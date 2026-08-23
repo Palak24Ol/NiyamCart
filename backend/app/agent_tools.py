@@ -65,10 +65,39 @@ def _product_data(product: Product) -> dict[str, object]:
 
 
 def search_catalog(db: Session, args: SearchCatalogArgs) -> dict[str, object]:
+    catalog = list(db.scalars(select(Product)))
+    query = args.query.strip()
+    category = args.category.strip() if args.category else None
+    if category:
+        def category_key(value: str) -> str:
+            return " ".join(
+                token
+                for token in re.findall(r"[a-z0-9]+", value.casefold().replace("&", " and "))
+                if token != "and"
+            )
+
+        requested_key = category_key(category)
+        known_category = next(
+            (
+                product.category
+                for product in catalog
+                if category_key(product.category) == requested_key
+            ),
+            None,
+        )
+        if known_category is None:
+            # Models sometimes place a product type (for example "bedsheet") in the category
+            # argument. Treat it as another required search term instead of applying an impossible
+            # exact category filter. This keeps equivalent translated and English requests aligned.
+            if category.casefold() not in query.casefold():
+                query = f"{query} {category}"
+            category = None
+        else:
+            category = known_category
     matches = search_products(
-        list(db.scalars(select(Product))),
-        args.query.strip(),
-        category=args.category,
+        catalog,
+        query,
+        category=category,
         min_price_paise=args.min_price_paise,
         max_price_paise=args.max_price_paise,
     )[: args.limit]

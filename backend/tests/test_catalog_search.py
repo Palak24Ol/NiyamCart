@@ -36,6 +36,19 @@ def test_natural_price_limit_finds_bedsheets_under_300(catalog_db: Database) -> 
     assert all(int(product["price_paise"]) <= 30_000 for product in results)
 
 
+def test_product_type_in_category_field_is_recovered_deterministically(
+    catalog_db: Database,
+) -> None:
+    results = search(
+        catalog_db,
+        "blue",
+        category="bedsheet",
+        max_price_paise=30_000,
+    )
+
+    assert names(results) == ["Indigo Floral Bedsheet Set"]
+
+
 def test_colour_alias_and_hex_search_catalogue_fields(catalog_db: Database) -> None:
     blue = search(catalog_db, "blue bedsheet in any range")
     by_hex = search(catalog_db, "bedsheet #4657A7")
