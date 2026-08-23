@@ -44,6 +44,7 @@ class AgentAuditResponse(BaseModel):
 class SearchCatalogArgs(BaseModel):
     query: str = Field(min_length=1, max_length=120)
     category: str | None = Field(default=None, max_length=80)
+    min_price_paise: int | None = Field(default=None, ge=0)
     max_price_paise: int | None = Field(default=None, ge=0)
     limit: int = Field(default=5, ge=1, le=10)
 

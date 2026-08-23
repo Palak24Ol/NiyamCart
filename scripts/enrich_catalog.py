@@ -7,6 +7,53 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "backend" / "data" / "catalog.json"
 
+MATERIALS: dict[str, list[str]] = {
+    "Kurti, Saree & Lehenga": [
+        "Cotton Viscose", "Cotton", "Cotton Chikankari", "Rayon Blend", "Silk Blend",
+        "Georgette", "Art Silk", "Cotton Blend", "Organza", "Cotton Slub",
+    ],
+    "Women Western": [
+        "Viscose Crepe", "Cotton Blend", "Denim Cotton", "Cotton Elastane", "Cotton Poplin",
+        "Polyester Crepe", "Poly Viscose", "Viscose", "Denim Cotton", "Rayon",
+    ],
+    "Lingerie": [
+        "Nylon Elastane", "Cotton Elastane", "Modal Blend", "Cotton Elastane", "Cotton",
+        "Satin", "Cotton", "Nylon Elastane", "Cotton Modal", "Fleece",
+    ],
+    "Men": [
+        "Oxford Cotton", "Cotton Blend", "Pique Cotton", "Cotton Twill", "Denim Cotton",
+        "Cotton", "Polyester Knit", "Polyester Shell", "Polyester Dry-Fit", "Cotton Twill",
+    ],
+    "Kids & Toys": [
+        "Cotton Blend", "Cotton", "Organic Cotton", "Cotton Jersey", "Cotton Jersey",
+        "ABS Plastic", "Wood", "ABS Plastic", "Food-grade Plastic", "Paper and Non-toxic Pigment",
+    ],
+    "Home & Kitchen": [
+        "Cotton", "Stainless Steel", "Borosilicate Glass", "Cotton", "Cotton",
+        "Hard-anodised Aluminium", "Stainless Steel", "Carbon Steel", "ABS and Metal", "Microfibre",
+    ],
+    "Beauty & Health": [
+        "Aloe Vera Gel", "Vitamin C Serum", "Amino-acid Cleanser", "Cosmetic Pigment Blend",
+        "Herbal Oil Blend", "SPF 50 Cream", "Synthetic Fibre", "Tempered Glass",
+        "Polyester Fabric", "ABS and Silicone",
+    ],
+    "Jewellery & Accessories": [
+        "Imitation Pearl and Alloy", "Oxidised Alloy", "Gold-plated Alloy", "Kundan and Alloy",
+        "Stainless Steel", "Stainless Steel", "Satin Fabric", "Crystal and Alloy",
+        "Acetate Frame", "Polyester Satin",
+    ],
+    "Bags & Footwear": [
+        "PU Leather", "Quilted PU", "Polyester", "Polyester Canvas", "PU Leather",
+        "Mesh and EVA", "Engineered Mesh", "Textile and Synthetic Sole", "EVA",
+        "Synthetic Leather",
+    ],
+    "Popular": [
+        "Cotton Blend", "Art Silk", "Cotton Jersey", "Rayon Blend", "Food-grade Plastic",
+        "PU Leather", "Mesh and EVA", "Kundan and Alloy", "Botanical Skincare Blend",
+        "ABS Plastic",
+    ],
+}
+
 
 def _family_name(name: str) -> str:
     words = name.split()
@@ -124,8 +171,20 @@ def main() -> None:
         category = str(item["category"])
         offset = category_offsets.get(category, 0)
         family = min(offset // 5, 9)
+        material = MATERIALS[category][family]
+        item["material"] = material
+        family_name = _family_name(str(item["name"]))
+        occasion = str(item["occasion"]).lower()
+        item["description"] = (
+            f"Designed for {occasion}, this {family_name.lower()} uses {material.lower()} for "
+            "value-conscious Indian shoppers. Clear specifications, verified media and seller "
+            "evidence make it ready for an informed purchase."
+        )
+        highlights = list(item["highlights"])
+        highlights[0] = f"{material} construction with product-specific care guidance"
+        item["highlights"] = highlights
         item["specs"] = _specs(item, family)
-        item["version"] = max(int(item.get("version", 1)), 2)
+        item["version"] = max(int(item.get("version", 1)), 3)
         category_offsets[category] = offset + 1
     CATALOG_PATH.write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2) + "\n",

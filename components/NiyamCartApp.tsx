@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatMoney, formatSpecLabel, products, type Product } from "@/lib/catalog";
+import { formatMoney, formatSpecLabel, products, searchProducts, type Product } from "@/lib/catalog";
 import {
   continueAgent,
   getProposedCart,
@@ -67,11 +67,10 @@ export function NiyamCartApp() {
   const [visibleCount, setVisibleCount] = useState(12);
 
   const categories = ["All", ...Array.from(new Set(products.map((item) => item.category)))];
-  const visibleProducts = products.filter((item) => {
-    const matchesCategory = category === "All" || item.category === category;
-    const haystack = `${item.name} ${item.description} ${item.tags.join(" ")}`.toLowerCase();
-    return matchesCategory && haystack.includes(query.toLowerCase());
-  });
+  const categoryProducts = products.filter(
+    (item) => category === "All" || item.category === category,
+  );
+  const visibleProducts = searchProducts(categoryProducts, query);
   const displayedProducts = visibleProducts.slice(0, visibleCount);
 
   const cartLines = useMemo(
