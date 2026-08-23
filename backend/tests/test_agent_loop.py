@@ -218,6 +218,7 @@ def test_agent_api_exposes_degraded_result_and_sequenced_audit(tmp_path: Path, m
     from app.main import create_app
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     app = create_app(f"sqlite:///{tmp_path / 'api-agent.db'}")
     with TestClient(app) as client:
         created = client.post("/api/agent/sessions", json={"message": "men shoes"})

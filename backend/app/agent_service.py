@@ -34,6 +34,7 @@ Keep the final answer concise and mention the relevant policy rule when refusing
 
 @dataclass(frozen=True)
 class AgentConfig:
+    provider: str = "openai"
     model: str = "gpt-5.6-luna"
     reasoning_effort: str = "low"
     max_steps: int = 8
@@ -42,8 +43,17 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls) -> AgentConfig:
+        provider = os.getenv("AI_PROVIDER", "openai").strip().lower()
+        if provider not in {"openai", "groq"}:
+            provider = "openai"
+        model = (
+            os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+            if provider == "groq"
+            else os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
+        )
         return cls(
-            model=os.getenv("OPENAI_MODEL", "gpt-5.6-luna"),
+            provider=provider,
+            model=model,
             reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT", "low"),
             max_steps=min(max(int(os.getenv("AGENT_MAX_STEPS", "8")), 1), 8),
             max_revisions=max(int(os.getenv("AGENT_MAX_CART_REVISIONS", "2")), 0),
@@ -111,10 +121,104 @@ class OpenAIResponsesProvider:
         )
 
 
+def _chat_tools() -> list[dict[str, object]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["parameters"],
+            },
+        }
+        for tool in TOOL_DEFINITIONS
+    ]
+
+
+def _chat_messages(input_items: list[dict[str, object]]) -> list[dict[str, object]]:
+    messages: list[dict[str, object]] = [
+        {"role": "system", "content": SYSTEM_INSTRUCTIONS}
+    ]
+    for item in input_items:
+        if item.get("role") == "user":
+            messages.append({"role": "user", "content": str(item.get("content", ""))})
+        elif item.get("type") == "chat_assistant":
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": str(item.get("content", "")),
+                    "tool_calls": item.get("tool_calls", []),
+                }
+            )
+        elif item.get("type") == "function_call_output":
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": str(item.get("call_id", "")),
+                    "content": str(item.get("output", "")),
+                }
+            )
+    return messages
+
+
+class GroqChatProvider:
+    def __init__(self, config: AgentConfig) -> None:
+        from openai import OpenAI
+
+        self.config = config
+        self.client = OpenAI(
+            api_key=os.environ["GROQ_API_KEY"],
+            base_url="https://api.groq.com/openai/v1",
+        )
+
+    def respond(self, input_items: list[dict[str, object]]) -> ProviderTurn:
+        response = self.client.chat.completions.create(
+            model=self.config.model,
+            messages=_chat_messages(input_items),  # type: ignore[arg-type]
+            tools=_chat_tools(),  # type: ignore[arg-type]
+            tool_choice="auto",
+            parallel_tool_calls=False,
+            temperature=0,
+            max_completion_tokens=1200,
+        )
+        choice = response.choices[0].message
+        raw_calls = choice.tool_calls or []
+        calls = [
+            FunctionCall(
+                call_id=str(call.id),
+                name=str(call.function.name),
+                arguments=str(call.function.arguments),
+            )
+            for call in raw_calls
+        ]
+        chat_calls = [
+            {
+                "id": call.call_id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments},
+            }
+            for call in calls
+        ]
+        usage = response.usage
+        return ProviderTurn(
+            text=choice.content or "",
+            calls=calls,
+            output_items=[
+                {
+                    "type": "chat_assistant",
+                    "content": choice.content or "",
+                    "tool_calls": chat_calls,
+                }
+            ],
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+        )
+
+
 def default_provider(config: AgentConfig) -> AgentProvider | None:
-    if not os.getenv("OPENAI_API_KEY"):
-        return None
-    return OpenAIResponsesProvider(config)
+    if config.provider == "groq":
+        return GroqChatProvider(config) if os.getenv("GROQ_API_KEY") else None
+    return OpenAIResponsesProvider(config) if os.getenv("OPENAI_API_KEY") else None
 
 
 def _add_event(
@@ -174,7 +278,9 @@ def _finish(
     )
 
 
-def _estimated_cost(input_tokens: int, output_tokens: int) -> int:
+def _estimated_cost(input_tokens: int, output_tokens: int, provider: str) -> int:
+    if provider == "groq":
+        return 0
     # GPT-5.6 Luna: $0.20/M input and $1.20/M output = 0.2/1.2 micro-USD per token.
     return math.ceil(input_tokens * 0.2 + output_tokens * 1.2)
 
@@ -288,7 +394,7 @@ def run_agent(
         agent_session.input_tokens += turn.input_tokens
         agent_session.output_tokens += turn.output_tokens
         agent_session.estimated_cost_microusd += _estimated_cost(
-            turn.input_tokens, turn.output_tokens
+            turn.input_tokens, turn.output_tokens, config.provider
         )
         _add_event(
             db,
@@ -298,6 +404,7 @@ def run_agent(
                 "text": turn.text,
                 "tool_calls": [{"call_id": c.call_id, "name": c.name} for c in turn.calls],
                 "usage": {"input_tokens": turn.input_tokens, "output_tokens": turn.output_tokens},
+                "provider": config.provider,
             },
         )
         if agent_session.estimated_cost_microusd > config.max_cost_microusd:

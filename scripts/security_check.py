@@ -10,6 +10,7 @@ SECRET_PATTERNS = {
     "OpenAI-style secret": re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
     "Razorpay live key": re.compile(r"\brzp_live_[A-Za-z0-9]+\b"),
     "assigned OpenAI key": re.compile(r"OPENAI_API_KEY[ \t]*=[ \t]*\S+"),
+    "assigned Groq key": re.compile(r"GROQ_API_KEY[ \t]*=[ \t]*\S+"),
     "assigned Razorpay secret": re.compile(r"RAZORPAY_KEY_SECRET[ \t]*=[ \t]*\S+"),
     "assigned Twilio token": re.compile(r"TWILIO_AUTH_TOKEN[ \t]*=[ \t]*\S+"),
 }

@@ -14,6 +14,7 @@ from backend.app.evaluation import (
     SINGLE_SHOT_INSTRUCTIONS,
     SINGLE_SHOT_PROMPT_VERSION,
     EvaluationCase,
+    GroqSingleShotClient,
     OpenAISingleShotClient,
     metrics,
     run_arm,
@@ -45,20 +46,23 @@ def main() -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="Run paid OpenAI single-shot and full-agent arms; requires OPENAI_API_KEY",
+        help="Run live single-shot and full-agent arms using the configured AI provider",
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    if args.live and not os.getenv("OPENAI_API_KEY"):
-        raise SystemExit("--live requires OPENAI_API_KEY; no live results were fabricated")
-
     selected = SPLIT_FILES if args.split == "all" else {args.split: SPLIT_FILES[args.split]}
     config = AgentConfig.from_env()
+    required_key = "GROQ_API_KEY" if config.provider == "groq" else "OPENAI_API_KEY"
+    if args.live and not os.getenv(required_key):
+        raise SystemExit(
+            f"--live requires {required_key}; no live results were fabricated"
+        )
     report: dict[str, object] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "live_model_calls": args.live,
         "model": config.model,
+        "provider": config.provider,
         "reasoning_effort": config.reasoning_effort,
         "full_agent_prompt_version": "bounded-agent-v1",
         "full_agent_instructions_sha256": __import__("hashlib").sha256(
@@ -90,7 +94,11 @@ def main() -> None:
                     "results": serialise_results(full_results),
                 }
                 if args.live:
-                    single_shot_client = OpenAISingleShotClient(config.model)
+                    single_shot_client = (
+                        GroqSingleShotClient(config.model)
+                        if config.provider == "groq"
+                        else OpenAISingleShotClient(config.model)
+                    )
                     single_results = [
                         run_single_shot(session, case, single_shot_client) for case in cases
                     ]
@@ -102,7 +110,7 @@ def main() -> None:
                     arms["single_shot"] = {
                         "status": "not_run",
                         "reason": (
-                            "OPENAI_API_KEY was not configured; no live result was fabricated"
+                            f"{required_key} was not configured; no live result was fabricated"
                         ),
                     }
                 report["splits"][split] = {"case_count": len(cases), "arms": arms}

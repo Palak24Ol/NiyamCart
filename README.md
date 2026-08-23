@@ -46,7 +46,7 @@ The clean frontend/backend foundation is implemented with:
 - Razorpay test-order creation bound to the internal order, receipt, and exact cart hash.
 - Standard Checkout with a separate human approval action and server-side signature verification.
 - Callback and raw-body-verified webhook reconciliation through one payment finaliser.
-- Bounded OpenAI Responses tool loop with six strict merchant tools.
+- Bounded Groq/OpenAI tool loop with six strict merchant tools.
 - Redacted, hash-chained audit events with server-side tamper verification.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
@@ -119,10 +119,12 @@ Both well-known endpoints support conditional requests through `If-None-Match` a
 - `GET /api/audit/{scope}/{id}` recomputes and verifies the hash chain for an agent session, cart,
   or order.
 
-Set `OPENAI_API_KEY` to use the live Responses API. The default model is
-`gpt-5.6-luna` at low reasoning effort. Without a key—or during a provider failure—the endpoint
-falls back to deterministic catalog search, labels the result as degraded, and never fabricates a
-cart. Model calls are additionally capped by `AGENT_MAX_COST_MICROUSD`.
+Set `AI_PROVIDER=groq`, `GROQ_API_KEY`, and `GROQ_MODEL=openai/gpt-oss-20b` to use the
+Groq-compatible live agent. OpenAI remains available through `AI_PROVIDER=openai`,
+`OPENAI_API_KEY`, and `OPENAI_MODEL`. Without the selected provider key—or during a provider
+failure—the endpoint falls back to deterministic catalog search, labels the result as degraded,
+and never fabricates a cart. Model calls are additionally bounded by the configured step and cost
+limits.
 
 The only model-callable tools are catalog search, product details, compatible add-ons, policy
 lookup, proposed-cart creation, and human escalation. Order creation, approval, checkout, and
@@ -137,7 +139,8 @@ and full-agent measurements are explicitly marked not run because no API credent
 the runner never fabricates missing results.
 
 See `docs/evaluation-plan.md`, `docs/evaluation-report.md`, and
-`backend/evals/results/offline-report.json`. A paid live run is always explicit:
+`backend/evals/results/offline-report.json`. A live run is always explicit and uses the configured
+provider:
 
 ```bash
 python -m scripts.run_evaluation --split heldout --live --output backend/evals/results/live-report.json
@@ -145,11 +148,12 @@ python -m scripts.run_evaluation --split heldout --live --output backend/evals/r
 
 ## Optional WhatsApp handoff
 
-The cart can prepare a signed, review-only utility message after explicit opt-in. It is feature
-flagged off by default, idempotent, and cannot approve or pay. A confirmation handoff is gated on
-the backend-verified `paid` state. The current implementation intentionally does not collect a phone
-number or transmit data to an external messaging provider; connecting Twilio requires explicit
-destination-specific authorization and approved Content SIDs. See `docs/whatsapp-handoff.md`.
+The cart can send a signed, review-only WhatsApp message after explicit opt-in and exact destination
+confirmation. It is feature flagged, idempotent, and cannot approve or pay. The raw destination is
+used only for the provider call and is not persisted; audit records contain a keyed fingerprint.
+A payment confirmation is gated on independently verified Razorpay test payment evidence. During
+an active Twilio Sandbox 24-hour session, the sender uses a free-form message body. Approved Content
+SIDs can be supplied later for production-style template delivery. See `docs/whatsapp-handoff.md`.
 
 ## Verify
 

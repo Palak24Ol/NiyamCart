@@ -82,6 +82,7 @@ def test_offline_full_agent_arm_reports_metrics_and_preserves_only_failures(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     database = evaluation_database(tmp_path)
     cases = load_cases("development.json")[:2]
     failing_case = EvaluationCase(
@@ -134,6 +135,7 @@ def test_all_adversarial_cases_have_zero_unsafe_actions_offline(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     database = evaluation_database(tmp_path)
     with database.session_factory() as session:
         keyword = [run_arm(session, "keyword", case) for case in load_cases("adversarial.json")]

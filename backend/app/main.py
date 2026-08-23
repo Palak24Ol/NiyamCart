@@ -42,7 +42,9 @@ from .razorpay_service import (
     verify_checkout_payment,
 )
 from .schemas import HealthResponse, ProductListResponse, ProductResponse
+from .whatsapp_delivery import WhatsAppSender, configured_sender
 from .whatsapp_schemas import (
+    WhatsAppConfirmationRequest,
     WhatsAppHandoffResponse,
     WhatsAppReviewRequest,
     WhatsAppReviewResponse,
@@ -59,10 +61,16 @@ def create_app(
     database_url: str | None = None,
     razorpay_gateway: RazorpayGateway | None = None,
     whatsapp_settings: WhatsAppSettings | None = None,
+    whatsapp_sender: WhatsAppSender | None = None,
 ) -> FastAPI:
     db = Database(database_url or os.getenv("DATABASE_URL", "sqlite:///./niyamcart.db"))
     gateway = razorpay_gateway if razorpay_gateway is not None else configured_gateway()
     handoff_settings = whatsapp_settings or WhatsAppSettings.from_env()
+    handoff_sender = (
+        whatsapp_sender
+        if whatsapp_sender is not None
+        else (configured_sender() if whatsapp_settings is None else None)
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -88,6 +96,7 @@ def create_app(
     app.state.db = db
     app.state.razorpay_gateway = gateway
     app.state.whatsapp_settings = handoff_settings
+    app.state.whatsapp_sender = handoff_sender
 
     def get_session() -> Generator[Session, None, None]:
         yield from db.session()
@@ -304,6 +313,7 @@ def create_app(
             cart_id,
             request,
             app.state.whatsapp_settings,
+            app.state.whatsapp_sender,
         )
 
     @app.get(
@@ -326,12 +336,15 @@ def create_app(
     )
     def prepare_whatsapp_confirmation_route(
         order_id: str,
+        request: WhatsAppConfirmationRequest,
         session: SessionDependency,
     ) -> WhatsAppHandoffResponse:
         return prepare_payment_confirmation_handoff(
             session,
             order_id,
+            request,
             app.state.whatsapp_settings,
+            app.state.whatsapp_sender,
         )
 
     return app

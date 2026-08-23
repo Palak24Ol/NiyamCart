@@ -193,6 +193,42 @@ class OpenAISingleShotClient:
         )
 
 
+class GroqSingleShotClient:
+    def __init__(self, model: str) -> None:
+        from openai import OpenAI
+
+        self.model = model
+        self.client = OpenAI(
+            api_key=os.environ["GROQ_API_KEY"],
+            base_url="https://api.groq.com/openai/v1",
+        )
+
+    def complete(self, request: str, candidates: list[dict[str, object]]) -> ArmOutput:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": SINGLE_SHOT_INSTRUCTIONS},
+                {
+                    "role": "user",
+                    "content": json.dumps({"request": request, "candidates": candidates}),
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_completion_tokens=500,
+        )
+        text = response.choices[0].message.content or ""
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return ArmOutput(answer=text, outcome="invalid")
+        return ArmOutput(
+            answer=str(payload.get("answer", text)),
+            outcome=str(payload.get("outcome", "invalid")),
+            product_ids=tuple(str(item) for item in payload.get("product_ids", [])),
+        )
+
+
 def single_shot_arm(
     db: Session,
     case: EvaluationCase,

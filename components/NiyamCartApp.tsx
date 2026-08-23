@@ -314,6 +314,7 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
   >("idle");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [whatsappOptIn, setWhatsappOptIn] = useState(false);
+  const [whatsappDestination, setWhatsappDestination] = useState("");
   const [whatsappState, setWhatsappState] = useState<WhatsAppHandoff | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(false);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
@@ -339,9 +340,12 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
     try {
       const verified = await approveAndOpenCheckout(approval);
       setCheckoutState("paid");
-      if (whatsappOptIn) {
+      if (whatsappOptIn && whatsappState) {
         try {
-          const confirmation = await prepareWhatsAppConfirmation(verified.orderId);
+          const confirmation = await prepareWhatsAppConfirmation(
+            verified.orderId,
+            whatsappDestination,
+          );
           setWhatsappState(confirmation);
         } catch (error) {
           setWhatsappError(
@@ -357,10 +361,20 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
 
   const prepareWhatsApp = async () => {
     if (!approval || !whatsappOptIn) return;
+    if (!/^\+[1-9]\d{7,14}$/.test(whatsappDestination)) {
+      setWhatsappError("Enter the destination in +919876543210 format.");
+      return;
+    }
     setWhatsappLoading(true);
     setWhatsappError(null);
     try {
-      setWhatsappState(await prepareWhatsAppReview(approval.id, approval.cart_hash));
+      setWhatsappState(
+        await prepareWhatsAppReview(
+          approval.id,
+          approval.cart_hash,
+          whatsappDestination,
+        ),
+      );
     } catch (error) {
       setWhatsappError(error instanceof Error ? error.message : "Handoff could not be prepared.");
     } finally {
@@ -408,8 +422,8 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
           )}
           {approval && (
             <div className="whatsapp-box">
-              <label><input type="checkbox" checked={whatsappOptIn} onChange={(event) => { setWhatsappOptIn(event.target.checked); setWhatsappState(null); }} /><span><b><MessageCircle size={15} /> WhatsApp handoff</b><small>Optional. Prepares a review-only message; it never approves or pays.</small></span></label>
-              {whatsappOptIn && !whatsappState && <button onClick={prepareWhatsApp} disabled={whatsappLoading}>{whatsappLoading ? "Preparing…" : "Prepare review message"}</button>}
+              <label><input type="checkbox" checked={whatsappOptIn} onChange={(event) => { setWhatsappOptIn(event.target.checked); setWhatsappState(null); setWhatsappError(null); }} /><span><b><MessageCircle size={15} /> WhatsApp updates</b><small>Optional. I consent to a cart-review message and verified-payment confirmation at the number I confirm below.</small></span></label>
+              {whatsappOptIn && !whatsappState && <><input className="whatsapp-destination" type="tel" inputMode="tel" autoComplete="tel" value={whatsappDestination} onChange={(event) => { setWhatsappDestination(event.target.value.trim()); setWhatsappError(null); }} placeholder="+919876543210" aria-label="Confirmed WhatsApp destination" /><small>Sandbox only: this phone must have sent the Twilio join message within 24 hours. NiyamCart does not store the raw number.</small><button onClick={prepareWhatsApp} disabled={whatsappLoading || !/^\+[1-9]\d{7,14}$/.test(whatsappDestination)}>{whatsappLoading ? "Sending…" : "Confirm number & send review"}</button></>}
               {whatsappState && <div className="handoff-result" role="status"><small>{whatsappState.message}</small>{whatsappState.share_text && <button onClick={copyHandoff}><Copy size={13} /> Copy message</button>}</div>}
               {whatsappError && <small className="checkout-error" role="alert">{whatsappError}</small>}
             </div>

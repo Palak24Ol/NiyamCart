@@ -127,7 +127,7 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 - [x] Start only after Phases 0-8 are green.
 - [x] Require explicit opt-in.
 - [x] Send secure cart-review link, not financial approval.
-- [ ] Send confirmation only after backend verification.
+- [x] Send confirmation only after backend verification.
 - [ ] Use an approved/sandbox-compatible utility template.
 - [x] Add notification idempotency.
 - [x] Add feature flag and in-app fallback.
