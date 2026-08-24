@@ -42,6 +42,8 @@ class CompatibleAddonItem(BaseModel):
     product_id: str
     rule_id: str
     reason: str
+    match_score: int = Field(ge=0, le=100)
+    evidence: list[str]
 
 
 class CompatibleAddonListResponse(BaseModel):

@@ -973,7 +973,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               <ArrowRight size={18} />
             </button>
           )}
-          {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
+          {checkoutError && <p className="checkout-error" role="alert">{checkoutError}{checkoutError.toLowerCase().includes("sign in") && <Link href={`/auth?next=${encodeURIComponent("/#shop")}`}>Sign in to continue</Link>}</p>}
           <small className="test-mode" aria-live="polite">Razorpay test mode · No real money charged</small>
         </div>}
       </aside>
@@ -1021,7 +1021,7 @@ function GrowthBundleCard({ primary, matches, cart, subtotal, loading, rejected,
           <button className="addon-visual" type="button" aria-label={`View ${match.product.name}`} onClick={() => onOpen(match.product)}>
             <img src={match.product.image} alt="" />
           </button>
-          <div><b>{match.product.name}</b><small>{match.reason}</small><strong>{formatMoney(match.product.pricePaise)}</strong></div>
+          <div><b>{match.product.name}</b><span className="compatibility-score">{match.match_score}/100 compatibility</span><small>{match.reason}</small><details className="compatibility-evidence"><summary>Why it pairs</summary>{match.evidence.map((item) => <p key={item}><Check size={11} /> {item}</p>)}</details><strong>{formatMoney(match.product.pricePaise)}</strong></div>
           <button onClick={() => { void recordGrowthEvent({ primary_product_id: primary.id, addon_product_id: match.product.id, event_type: "accepted", baseline_paise: subtotal, suggested_paise: subtotal + match.product.pricePaise }).catch(() => undefined); onAdd(match.product.id); }}><Plus size={14} /> Add</button>
         </article>
       ))}

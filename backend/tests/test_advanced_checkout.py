@@ -165,3 +165,18 @@ def test_reverse_geocoding_never_uses_an_unconfigured_public_service(tmp_path: P
         )
     assert response.status_code == 503
     assert response.json()["error"] == "REVERSE_GEOCODING_NOT_CONFIGURED"
+
+
+def test_bedsheet_cross_sell_is_a_scored_home_complement(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'compatibility.db'}")
+    with TestClient(app) as client:
+        response = client.get("/api/products/P-252/compatible-addons?limit=3")
+        product_ids = [item["product_id"] for item in response.json()["items"]]
+        products = [client.get(f"/api/products/{product_id}").json() for product_id in product_ids]
+
+    assert response.status_code == 200
+    assert len(product_ids) == 3
+    assert all(product["category"] == "Home & Kitchen" for product in products)
+    assert all("Cushion Cover" in product["name"] for product in products)
+    assert all(item["match_score"] >= 80 for item in response.json()["items"])
+    assert all(item["evidence"] for item in response.json()["items"])

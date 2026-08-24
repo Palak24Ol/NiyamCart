@@ -43,7 +43,7 @@ from .commerce_schemas import (
     CreateOrderRequest,
     OrderResponse,
 )
-from .compatibility import compatible_addon_ids
+from .compatibility import compatibility_evidence, compatible_addon_ids
 from .database import Database
 from .fulfillment_schemas import (
     AddressInput,
@@ -336,17 +336,15 @@ def create_app(
         for addon in addons:
             if addon is None:
                 continue
-            if addon.category == "Jewellery & Accessories":
-                reason = "Coordinates with the selected look using the merchant compatibility map."
-            elif addon.category == "Bags & Footwear":
-                reason = "Completes the look without changing the selected product or its fit."
-            else:
-                reason = "A merchant-defined complement for the selected product category."
+            score, evidence = compatibility_evidence(product, addon)
+            reason = evidence[0]
             items.append(
                 CompatibleAddonItem(
                     product_id=addon.id,
                     rule_id="COMPAT-DETERMINISTIC-COMPLEMENT-V1",
                     reason=reason,
+                    match_score=score,
+                    evidence=evidence,
                 )
             )
         return CompatibleAddonListResponse(

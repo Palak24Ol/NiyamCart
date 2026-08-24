@@ -2,6 +2,8 @@ export type CompatibleAddon = {
   product_id: string;
   rule_id: string;
   reason: string;
+  match_score: number;
+  evidence: string[];
 };
 
 export type CompatibleAddonResponse = {

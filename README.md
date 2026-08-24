@@ -62,7 +62,7 @@ The clean frontend/backend foundation is implemented with:
 - Protected My Orders and Profile pages with account-scoped browser storage for MVP preferences and receipts.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
-- 97 automated tests spanning unit, integration, randomized properties, reliability, and races.
+- 98 automated tests spanning unit, integration, randomized properties, reliability, and races.
 
 The frontend calls the bounded agent API directly. Shopper chat shows grounded products, policy
 refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and
