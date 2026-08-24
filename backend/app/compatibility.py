@@ -33,9 +33,7 @@ def products_by_category(products: list[Product]) -> dict[str, list[Product]]:
     return result
 
 
-def complement_product_ids(
-    product: Product, by_category: dict[str, list[Product]]
-) -> list[str]:
+def complement_product_ids(product: Product, by_category: dict[str, list[Product]]) -> list[str]:
     result: list[str] = []
     offset = product_number(product.id)
     for category in COMPLEMENT_CATEGORIES.get(product.category, ()):

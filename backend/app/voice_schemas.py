@@ -23,4 +23,3 @@ class SpeechSynthesisResponse(BaseModel):
     audio_mime_type: str = "audio/wav"
     language_code: str
     voice_status: Literal["ready"] = "ready"
-

@@ -58,9 +58,7 @@ class TwilioSettings:
             auth_token=auth_token,
             from_address=from_address,
             review_content_sid=os.getenv("TWILIO_REVIEW_CONTENT_SID", "").strip(),
-            confirmation_content_sid=os.getenv(
-                "TWILIO_CONFIRMATION_CONTENT_SID", ""
-            ).strip(),
+            confirmation_content_sid=os.getenv("TWILIO_CONFIRMATION_CONTENT_SID", "").strip(),
         )
 
 

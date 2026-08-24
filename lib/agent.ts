@@ -7,6 +7,29 @@ export type AgentRun = {
   revision_count: number;
   estimated_cost_microusd: number;
   recommended_product_ids: string[];
+  match_scores: Array<{
+    product_id: string;
+    overall_score: number;
+    hard_constraints: string[];
+    matched_fields: string[];
+    components: Array<{
+      key: string;
+      label: string;
+      score: number;
+      max_score: number;
+      status: "matched" | "failed" | "not_requested";
+      evidence: string;
+    }>;
+  }>;
+  intent_mandate: {
+    mandate_id: string;
+    integrity_hash: string;
+    expires_at: string;
+    normalized_request: string;
+    constraints: Record<string, unknown>;
+    payment_rule: "always_ask";
+    max_addons: number;
+  } | null;
   language_code: string;
   script_code: string | null;
   input_text: string | null;

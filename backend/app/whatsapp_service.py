@@ -59,9 +59,7 @@ def create_review_token(cart: Cart, settings: WhatsAppSettings) -> str:
     if not cart.cart_hash or not cart.expires_at:
         raise CommerceError(409, "CART_NOT_FROZEN", "Freeze the cart before sharing it")
     expires_at = (
-        cart.expires_at.replace(tzinfo=UTC)
-        if cart.expires_at.tzinfo is None
-        else cart.expires_at
+        cart.expires_at.replace(tzinfo=UTC) if cart.expires_at.tzinfo is None else cart.expires_at
     )
     payload = {
         "cart_id": cart.id,
@@ -96,9 +94,7 @@ def load_review_cart(db: Session, token: str, settings: WhatsAppSettings) -> Car
 
 
 def _fingerprint(destination: str, settings: WhatsAppSettings) -> str:
-    return hmac.new(
-        settings.link_secret.encode(), destination.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(settings.link_secret.encode(), destination.encode(), hashlib.sha256).hexdigest()
 
 
 def _existing(db: Session, key: str) -> WhatsAppHandoff | None:
@@ -121,9 +117,7 @@ def _response(handoff: WhatsAppHandoff, *, duplicate: bool) -> WhatsAppHandoffRe
         duplicate=duplicate,
         template_name=handoff.template_name,
         review_url=(
-            str(handoff.payload.get("review_url"))
-            if handoff.payload.get("review_url")
-            else None
+            str(handoff.payload.get("review_url")) if handoff.payload.get("review_url") else None
         ),
         share_text=str(handoff.payload["share_text"]),
         message=messages.get(handoff.status, "WhatsApp handoff prepared."),
@@ -200,9 +194,7 @@ def _create_and_deliver(
         f"whatsapp_{handoff.kind}_{handoff.status}",
         {
             "template_name": handoff.template_name,
-            "destination_fingerprint": str(
-                handoff.payload["destination_fingerprint"]
-            )[:12],
+            "destination_fingerprint": str(handoff.payload["destination_fingerprint"])[:12],
             "status": handoff.status,
             "permits_financial_approval": False,
         },

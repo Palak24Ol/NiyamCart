@@ -51,9 +51,7 @@ class FakeRazorpayGateway:
         return hmac.compare_digest(expected, signature)
 
     def verify_webhook_signature(self, raw_body: bytes, signature: str) -> bool:
-        expected = hmac.new(
-            self.webhook_secret.encode(), raw_body, hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(self.webhook_secret.encode(), raw_body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature)
 
     def checkout_signature(self, order_id: str, payment_id: str) -> str:
@@ -64,9 +62,7 @@ class FakeRazorpayGateway:
         ).hexdigest()
 
     def webhook_signature(self, raw_body: bytes) -> str:
-        return hmac.new(
-            self.webhook_secret.encode(), raw_body, hashlib.sha256
-        ).hexdigest()
+        return hmac.new(self.webhook_secret.encode(), raw_body, hashlib.sha256).hexdigest()
 
 
 def make_client(tmp_path: Path, gateway: FakeRazorpayGateway) -> TestClient:
@@ -262,9 +258,7 @@ def test_fetched_payment_must_match_every_authoritative_field(
     assert stored.json()["status"] == "payment_pending"
 
 
-def webhook_payload(
-    event_type: str, checkout: dict[str, object], payment_id: str
-) -> bytes:
+def webhook_payload(event_type: str, checkout: dict[str, object], payment_id: str) -> bytes:
     return json.dumps(
         {
             "entity": "event",

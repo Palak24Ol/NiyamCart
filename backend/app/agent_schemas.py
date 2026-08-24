@@ -25,6 +25,33 @@ class AgentEventResponse(BaseModel):
     created_at: datetime
 
 
+class MatchScoreComponent(BaseModel):
+    key: str
+    label: str
+    score: int
+    max_score: int
+    status: Literal["matched", "failed", "not_requested"]
+    evidence: str
+
+
+class ProductMatchScore(BaseModel):
+    product_id: str
+    overall_score: int = Field(ge=0, le=100)
+    hard_constraints: list[str]
+    matched_fields: list[str]
+    components: list[MatchScoreComponent]
+
+
+class IntentMandate(BaseModel):
+    mandate_id: str
+    integrity_hash: str = Field(min_length=64, max_length=64)
+    expires_at: datetime
+    normalized_request: str
+    constraints: dict[str, object]
+    payment_rule: Literal["always_ask"] = "always_ask"
+    max_addons: int = 1
+
+
 class AgentRunResponse(BaseModel):
     session_id: str
     status: Literal["completed", "escalated", "degraded", "budget_exhausted", "failed"]
@@ -34,6 +61,8 @@ class AgentRunResponse(BaseModel):
     revision_count: int
     estimated_cost_microusd: int
     recommended_product_ids: list[str] = Field(default_factory=list, max_length=8)
+    match_scores: list[ProductMatchScore] = Field(default_factory=list, max_length=8)
+    intent_mandate: IntentMandate | None = None
     language_code: str = "en-IN"
     script_code: str | None = None
     input_text: str | None = None

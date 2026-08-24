@@ -52,11 +52,17 @@ The clean frontend/backend foundation is implemented with:
 - Separate judge-facing Trust & Audit drawer with redacted, hash-chained agent, cart, and order evidence.
 - One-click autonomous-payment refusal demo with the exact policy rule and zero commerce side effects.
 - Post-payment receipt with order, amount, Razorpay test-payment, timestamp, and WhatsApp state.
+- Deterministic 100-point product match breakdowns with catalogue evidence per component.
+- Expiring SHA-256 intent mandates binding budget, stock, add-on, and always-ask payment rules.
+- Conversational saved/new/current-location delivery flow before final cart locking.
+- Merchant-approved Razorpay test-offer ranking; previews are disabled until an Offer ID is set.
+- Self-healing cart rescue that shows replacements, revokes prior approval, and requires reapproval.
+- Causal Growth Ledger separating exposure, rejection, acceptance, and realised test uplift.
 - Functional login and sign-up with scrypt password hashing and HttpOnly cookie sessions.
 - Protected My Orders and Profile pages with account-scoped browser storage for MVP preferences and receipts.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
-- 92 automated tests spanning unit, integration, randomized properties, reliability, and races.
+- 97 automated tests spanning unit, integration, randomized properties, reliability, and races.
 
 The frontend calls the bounded agent API directly. Shopper chat shows grounded products, policy
 refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and

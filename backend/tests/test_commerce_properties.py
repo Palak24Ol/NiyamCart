@@ -32,8 +32,7 @@ def test_randomized_cart_totals_and_hashes_preserve_money_invariants(tmp_path: P
                 ),
             )
             expected_total = sum(
-                authoritative_prices[product.id] * quantities[product.id]
-                for product in selected
+                authoritative_prices[product.id] * quantities[product.id] for product in selected
             )
             assert cart.total_paise == expected_total
             assert all(isinstance(item.line_total_paise, int) for item in cart.items)

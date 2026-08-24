@@ -45,7 +45,30 @@ from .commerce_schemas import (
 )
 from .compatibility import compatible_addon_ids
 from .database import Database
+from .fulfillment_schemas import (
+    AddressInput,
+    AddressListResponse,
+    AddressResponse,
+    CartDeliveryRequest,
+    CartDeliveryResponse,
+    ReverseGeocodeRequest,
+    ReverseGeocodeResponse,
+)
+from .fulfillment_service import (
+    confirm_cart_delivery,
+    list_addresses,
+    reverse_geocode,
+    save_address,
+)
+from .growth_schemas import GrowthEventRequest, GrowthEventResponse, GrowthLedgerResponse
+from .growth_service import growth_ledger, record_growth_event
 from .models import Product
+from .offer_schemas import (
+    PaymentOfferListResponse,
+    SelectedPaymentOfferResponse,
+    SelectPaymentOfferRequest,
+)
+from .offer_service import available_offers, select_offer
 from .policy import PolicyDecision, PolicyEvaluationRequest, evaluate_policy
 from .razorpay_schemas import (
     PaymentVerificationResponse,
@@ -61,6 +84,8 @@ from .razorpay_service import (
     process_razorpay_webhook,
     verify_checkout_payment,
 )
+from .rescue_schemas import RescueCartRequest, RescueCartResponse
+from .rescue_service import rescue_cart
 from .sarvam_service import PreparedText, SarvamError, SarvamProvider, configured_sarvam
 from .schemas import (
     CompatibleAddonItem,
@@ -124,7 +149,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=[frontend_origin],
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=["content-type"],
     )
     app.state.db = db
@@ -176,6 +201,9 @@ def create_app(
             )
         )
 
+    def require_customer(request: Request, session: Session):
+        return load_customer_from_token(session, request.cookies.get(SESSION_COOKIE))
+
     def attach_session_cookie(response: Response, token: str, expires_at) -> None:
         response.set_cookie(
             key=SESSION_COOKIE,
@@ -217,6 +245,46 @@ def create_app(
             samesite="lax",
         )
         return LogoutResponse()
+
+    @app.get("/api/customer/addresses", response_model=AddressListResponse, tags=["fulfillment"])
+    def customer_addresses(request: Request, session: SessionDependency):
+        customer = require_customer(request, session)
+        items = list_addresses(session, customer)
+        return AddressListResponse(items=items, count=len(items))
+
+    @app.post(
+        "/api/customer/addresses",
+        response_model=AddressResponse,
+        status_code=201,
+        tags=["fulfillment"],
+    )
+    def create_customer_address(
+        payload: AddressInput, request: Request, session: SessionDependency
+    ):
+        return save_address(session, require_customer(request, session), payload)
+
+    @app.put(
+        "/api/customer/addresses/{address_id}",
+        response_model=AddressResponse,
+        tags=["fulfillment"],
+    )
+    def update_customer_address(
+        address_id: str,
+        payload: AddressInput,
+        request: Request,
+        session: SessionDependency,
+    ):
+        return save_address(
+            session, require_customer(request, session), payload, address_id=address_id
+        )
+
+    @app.post(
+        "/api/location/reverse-geocode",
+        response_model=ReverseGeocodeResponse,
+        tags=["fulfillment"],
+    )
+    def reverse_geocode_route(payload: ReverseGeocodeRequest):
+        return reverse_geocode(payload)
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
@@ -298,6 +366,116 @@ def create_app(
     @app.post("/api/carts/{cart_id}/freeze", response_model=CartResponse, tags=["commerce"])
     def freeze_cart_route(cart_id: str, session: SessionDependency):
         return freeze_cart(session, cart_id)
+
+    @app.post("/api/carts/{cart_id}/finalize", response_model=CartResponse, tags=["commerce"])
+    def finalize_checkout_cart(cart_id: str, request: Request, session: SessionDependency):
+        customer = require_customer(request, session)
+        cart = load_cart(session, cart_id)
+        if cart.fulfillment is not None and cart.fulfillment.customer_id != customer.id:
+            raise CommerceError(403, "CART_NOT_OWNED", "This checkout cart belongs to another user")
+        return freeze_cart(session, cart_id, require_checkout_context=True)
+
+    @app.post(
+        "/api/carts/{cart_id}/delivery",
+        response_model=CartDeliveryResponse,
+        tags=["fulfillment"],
+    )
+    def confirm_delivery_route(
+        cart_id: str,
+        payload: CartDeliveryRequest,
+        request: Request,
+        session: SessionDependency,
+    ):
+        fulfillment = confirm_cart_delivery(
+            session,
+            require_customer(request, session),
+            cart_id,
+            payload.address_id,
+            payload.confirmed,
+        )
+        return CartDeliveryResponse(
+            address_id=fulfillment.address_id,
+            address_label=fulfillment.address_label,
+            city=fulfillment.city,
+            masked_pincode=f"{fulfillment.pincode[:3]}***",
+            delivery_paise=fulfillment.delivery_paise,
+            eta_min_days=fulfillment.eta_min_days,
+            eta_max_days=fulfillment.eta_max_days,
+            confirmed_at=fulfillment.confirmed_at,
+        )
+
+    @app.get(
+        "/api/carts/{cart_id}/payment-offers",
+        response_model=PaymentOfferListResponse,
+        tags=["payments"],
+    )
+    def payment_offers_route(cart_id: str, session: SessionDependency):
+        cart = load_cart(session, cart_id)
+        items = available_offers(cart.total_paise)
+        selectable = [item for item in items if item.eligible and item.provider_configured]
+        best = max(selectable, key=lambda item: item.savings_paise)
+        return PaymentOfferListResponse(
+            cart_id=cart.id,
+            cart_total_paise=cart.total_paise,
+            items=items,
+            count=len(items),
+            best_offer_key=best.key,
+        )
+
+    @app.post(
+        "/api/carts/{cart_id}/payment-offer",
+        response_model=SelectedPaymentOfferResponse,
+        tags=["payments"],
+    )
+    def select_payment_offer_route(
+        cart_id: str,
+        payload: SelectPaymentOfferRequest,
+        request: Request,
+        session: SessionDependency,
+    ):
+        selection = select_offer(
+            session,
+            require_customer(request, session),
+            cart_id,
+            payload.offer_key,
+            payload.confirmed,
+        )
+        return SelectedPaymentOfferResponse(
+            offer_key=selection.offer_key,
+            title=selection.title,
+            payment_method=selection.payment_method,
+            savings_paise=selection.savings_paise,
+            expected_payable_paise=selection.expected_payable_paise,
+            provider_configured=selection.provider_offer_id is not None
+            or selection.offer_key == "standard",
+            selected_at=selection.selected_at,
+        )
+
+    @app.post(
+        "/api/carts/{cart_id}/rescue",
+        response_model=RescueCartResponse,
+        tags=["commerce"],
+    )
+    def rescue_cart_route(
+        cart_id: str,
+        payload: RescueCartRequest,
+        request: Request,
+        session: SessionDependency,
+    ):
+        return rescue_cart(session, require_customer(request, session), cart_id, payload)
+
+    @app.post(
+        "/api/growth/events",
+        response_model=GrowthEventResponse,
+        status_code=201,
+        tags=["growth"],
+    )
+    def growth_event_route(payload: GrowthEventRequest, session: SessionDependency):
+        return record_growth_event(session, payload)
+
+    @app.get("/api/growth/ledger", response_model=GrowthLedgerResponse, tags=["growth"])
+    def growth_ledger_route(session: SessionDependency):
+        return growth_ledger(session)
 
     @app.post("/api/carts/{cart_id}/approve", response_model=CartResponse, tags=["commerce"])
     def approve_cart_route(

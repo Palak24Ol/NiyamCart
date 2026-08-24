@@ -62,6 +62,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "content-type": "application/json", ...init?.headers },
   });
   const body = await response.json().catch(() => ({}));
@@ -88,12 +89,133 @@ export async function prepareCartForApproval(
       })),
     }),
   });
-  const frozen = await api<ApprovalCart>(`/api/carts/${proposed.id}/freeze`, {
-    method: "POST",
-  });
+  const frozen = await api<ApprovalCart>(`/api/carts/${proposed.id}/freeze`, { method: "POST" });
   if (!frozen.cart_hash) throw new Error("The cart could not be locked for approval.");
   return frozen;
 }
+
+export type DeliveryAddress = {
+  id: string;
+  label: string;
+  recipient_name: string;
+  phone: string;
+  line1: string;
+  locality: string;
+  landmark: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  latitude: number | null;
+  longitude: number | null;
+  is_default: boolean;
+};
+
+export type DeliveryQuote = {
+  address_id: string;
+  address_label: string;
+  city: string;
+  masked_pincode: string;
+  delivery_paise: number;
+  eta_min_days: number;
+  eta_max_days: number;
+  confirmed_at: string;
+};
+
+export type PaymentOffer = {
+  key: string;
+  title: string;
+  payment_method: string;
+  terms: string;
+  savings_paise: number;
+  expected_payable_paise: number;
+  eligible: boolean;
+  provider_configured: boolean;
+  status: "available" | "preview" | "ineligible" | "standard";
+  reason: string;
+};
+
+export async function createCheckoutCart(
+  lines: CartLineInput[],
+  compatibilityClaims: CompatibilityClaim[] = [],
+) {
+  return api<{ id: string; total_paise: number }>("/api/carts", {
+    method: "POST",
+    body: JSON.stringify({
+      items: lines.map((line) => ({ product_id: line.productId, quantity: line.quantity })),
+      compatibility_claims: compatibilityClaims.map((claim) => ({
+        primary_product_id: claim.primaryProductId,
+        addon_product_id: claim.addonProductId,
+      })),
+    }),
+  });
+}
+
+export const getAddresses = async () => {
+  const response = await api<{ items: DeliveryAddress[] }>("/api/customer/addresses");
+  return response.items;
+};
+
+export const saveAddress = (address: Omit<DeliveryAddress, "id">, addressId?: string) =>
+  api<DeliveryAddress>(addressId ? `/api/customer/addresses/${addressId}` : "/api/customer/addresses", {
+    method: addressId ? "PUT" : "POST",
+    body: JSON.stringify(address),
+  });
+
+export const confirmDelivery = (cartId: string, addressId: string) =>
+  api<DeliveryQuote>(`/api/carts/${cartId}/delivery`, {
+    method: "POST",
+    body: JSON.stringify({ address_id: addressId, confirmed: true }),
+  });
+
+export const reverseGeocode = (latitude: number, longitude: number) =>
+  api<{
+    line1: string;
+    locality: string;
+    city: string;
+    state: string;
+    pincode: string;
+    latitude: number;
+    longitude: number;
+    approximate: true;
+  }>("/api/location/reverse-geocode", {
+    method: "POST",
+    body: JSON.stringify({ latitude, longitude }),
+  });
+
+export const getPaymentOffers = async (cartId: string) =>
+  api<{ items: PaymentOffer[]; best_offer_key: string }>(`/api/carts/${cartId}/payment-offers`);
+
+export const selectPaymentOffer = (cartId: string, offerKey: string) =>
+  api(`/api/carts/${cartId}/payment-offer`, {
+    method: "POST",
+    body: JSON.stringify({ offer_key: offerKey, confirmed: true }),
+  });
+
+export const finalizeCheckoutCart = (cartId: string) =>
+  api<ApprovalCart>(`/api/carts/${cartId}/finalize`, { method: "POST" });
+
+export type CartRescue = {
+  previous_cart_id: string;
+  replacement_cart_id: string;
+  previous_approval_revoked: boolean;
+  intent_preserved: boolean;
+  price_delta_paise: number;
+  requires_new_review_and_approval: boolean;
+  data_mode: string;
+  changes: Array<{
+    old_product_name: string;
+    new_product_name: string;
+    old_price_paise: number;
+    new_price_paise: number;
+    reason: string;
+  }>;
+};
+
+export const demonstrateCartRescue = (cartId: string) =>
+  api<CartRescue>(`/api/carts/${cartId}/rescue`, {
+    method: "POST",
+    body: JSON.stringify({ simulate_inventory_change: true }),
+  });
 
 function loadRazorpayCheckout(): Promise<void> {
   if (window.Razorpay) return Promise.resolve();

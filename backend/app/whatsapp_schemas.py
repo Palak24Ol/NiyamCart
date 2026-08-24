@@ -19,9 +19,7 @@ class WhatsAppConfirmationRequest(BaseModel):
 
 
 class WhatsAppHandoffResponse(BaseModel):
-    status: Literal[
-        "ready_for_user_share", "sending", "sent", "delivery_failed", "disabled"
-    ]
+    status: Literal["ready_for_user_share", "sending", "sent", "delivery_failed", "disabled"]
     duplicate: bool
     template_name: str | None
     review_url: str | None

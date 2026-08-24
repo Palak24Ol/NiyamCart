@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import uuid4
 
@@ -12,9 +14,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .agent_models import AgentEvent, AgentSession
-from .agent_schemas import AgentRunResponse, SearchCatalogArgs
+from .agent_schemas import AgentRunResponse, IntentMandate, ProductMatchScore, SearchCatalogArgs
 from .agent_tools import TOOL_DEFINITIONS, ToolError, execute_tool, search_catalog
 from .audit import append_audit, redact
+from .catalog_search import explain_product_match, match_product, parse_price_constraints
+from .commerce_models import CartIntentMandate
 from .models import Product
 from .policy import PolicyEvaluationRequest, evaluate_policy
 
@@ -145,9 +149,7 @@ def _chat_tools() -> list[dict[str, object]]:
 
 
 def _chat_messages(input_items: list[dict[str, object]]) -> list[dict[str, object]]:
-    messages: list[dict[str, object]] = [
-        {"role": "system", "content": SYSTEM_INSTRUCTIONS}
-    ]
+    messages: list[dict[str, object]] = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
     for item in input_items:
         if item.get("role") in {"user", "assistant"}:
             messages.append(
@@ -279,6 +281,59 @@ def _finish(
     answer: str,
 ) -> AgentRunResponse:
     agent_session.status = status
+    existing_events = list(
+        db.scalars(
+            select(AgentEvent)
+            .where(AgentEvent.session_id == agent_session.id)
+            .order_by(AgentEvent.sequence)
+        )
+    )
+    current_query = next(
+        (
+            str(event.payload.get("text"))
+            for event in reversed(existing_events)
+            if event.event_type == "user_message" and isinstance(event.payload.get("text"), str)
+        ),
+        "",
+    )
+    _, minimum_paise, maximum_paise = parse_price_constraints(current_query)
+    mandate_payload: dict[str, object] = {
+        "session_id": agent_session.id,
+        "revision": agent_session.revision_count,
+        "normalized_request": " ".join(current_query.lower().split()),
+        "constraints": {
+            "minimum_price_paise": minimum_paise,
+            "maximum_price_paise": maximum_paise,
+            "in_stock_only": True,
+        },
+        "payment_rule": "always_ask",
+        "max_addons": 1,
+    }
+    mandate_hash = hashlib.sha256(
+        json.dumps(mandate_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    mandate = IntentMandate(
+        mandate_id=f"mandate-{mandate_hash[:16]}",
+        integrity_hash=mandate_hash,
+        expires_at=datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=15),
+        normalized_request=str(mandate_payload["normalized_request"]),
+        constraints=dict(mandate_payload["constraints"]),
+        payment_rule="always_ask",
+        max_addons=1,
+    )
+    _add_event(
+        db,
+        agent_session,
+        "intent_mandate_created",
+        {
+            "mandate_id": mandate.mandate_id,
+            "integrity_hash": mandate.integrity_hash,
+            "expires_at": mandate.expires_at.isoformat(),
+            "constraints": mandate.constraints,
+            "payment_rule": mandate.payment_rule,
+            "max_addons": mandate.max_addons,
+        },
+    )
     _add_event(db, agent_session, "final_answer", {"text": answer, "status": status})
     db.commit()
     events = list(
@@ -291,6 +346,14 @@ def _finish(
     last_user_sequence = max(
         (event.sequence for event in events if event.event_type == "user_message"),
         default=0,
+    )
+    current_query = next(
+        (
+            str(event.payload.get("text"))
+            for event in reversed(events)
+            if event.event_type == "user_message" and isinstance(event.payload.get("text"), str)
+        ),
+        "",
     )
     recommended_product_ids: list[str] = []
     current_proposed_cart_id: str | None = None
@@ -326,6 +389,53 @@ def _finish(
                 recommended_product_ids.append(product_id)
         if len(recommended_product_ids) >= 8:
             break
+    if current_proposed_cart_id:
+        bound_mandate = db.get(CartIntentMandate, current_proposed_cart_id)
+        if bound_mandate is None:
+            bound_mandate = CartIntentMandate(cart_id=current_proposed_cart_id)
+            db.add(bound_mandate)
+        bound_mandate.mandate_id = mandate.mandate_id
+        bound_mandate.integrity_hash = mandate.integrity_hash
+        bound_mandate.normalized_request = mandate.normalized_request
+        bound_mandate.constraints_json = json.dumps(
+            mandate.constraints, sort_keys=True, separators=(",", ":")
+        )
+        bound_mandate.payment_rule = mandate.payment_rule
+        bound_mandate.max_addons = mandate.max_addons
+        bound_mandate.expires_at = mandate.expires_at
+        append_audit(
+            db,
+            "cart",
+            current_proposed_cart_id,
+            "intent_mandate_bound",
+            {
+                "mandate_id": mandate.mandate_id,
+                "integrity_hash": mandate.integrity_hash,
+                "expires_at": mandate.expires_at.isoformat(),
+                "payment_rule": mandate.payment_rule,
+                "max_addons": mandate.max_addons,
+            },
+        )
+        db.commit()
+    match_scores = []
+    for product_id in recommended_product_ids[:8]:
+        product = db.get(Product, product_id)
+        if product is None:
+            continue
+        matched = match_product(product, current_query)
+        matched_fields = matched[1] if matched else []
+        explanation = explain_product_match(product, current_query, matched_fields)
+        match_scores.append(
+            ProductMatchScore.model_validate(
+                {
+                    "product_id": explanation.product_id,
+                    "overall_score": explanation.overall_score,
+                    "hard_constraints": explanation.hard_constraints,
+                    "matched_fields": explanation.matched_fields,
+                    "components": [component.__dict__ for component in explanation.components],
+                }
+            )
+        )
     return AgentRunResponse(
         session_id=agent_session.id,
         status=status,
@@ -335,6 +445,8 @@ def _finish(
         revision_count=agent_session.revision_count,
         estimated_cost_microusd=agent_session.estimated_cost_microusd,
         recommended_product_ids=recommended_product_ids[:8],
+        match_scores=match_scores,
+        intent_mandate=mandate,
         policy_decision=policy_decision,
         policy_rule_id=policy_rule_id,
     )
@@ -409,9 +521,7 @@ def _degraded_answer(db: Session, agent_session: AgentSession, message: str) -> 
 
 def _autonomous_payment_request(message: str) -> bool:
     normalized = " ".join(message.lower().split())
-    financial = any(
-        word in normalized for word in ("buy", "pay", "purchase", "checkout", "charge")
-    )
+    financial = any(word in normalized for word in ("buy", "pay", "purchase", "checkout", "charge"))
     autonomous = any(
         phrase in normalized
         for phrase in (
@@ -454,8 +564,7 @@ def _finish_at_step_limit(db: Session, agent_session: AgentSession) -> AgentRunR
             if not isinstance(candidate, dict) or not isinstance(candidate.get("product_id"), str):
                 continue
             already_grounded = any(
-                item.get("product_id") == candidate["product_id"]
-                for item in grounded_products
+                item.get("product_id") == candidate["product_id"] for item in grounded_products
             )
             if not already_grounded:
                 grounded_products.append(candidate)

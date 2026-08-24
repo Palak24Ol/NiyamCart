@@ -11,7 +11,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from .audit import append_audit
-from .commerce_models import Cart, CartCompatibilityClaim, CartItem, Order, PaymentEvent
+from .commerce_models import (
+    Cart,
+    CartCompatibilityClaim,
+    CartItem,
+    CartOfferSelection,
+    Order,
+    PaymentEvent,
+)
 from .commerce_schemas import CreateCartRequest, CreateOrderRequest
 from .compatibility import complement_product_ids, products_by_category
 from .models import Product
@@ -35,7 +42,13 @@ def load_cart(session: Session, cart_id: str) -> Cart:
     cart = session.scalar(
         select(Cart)
         .where(Cart.id == cart_id)
-        .options(selectinload(Cart.items), selectinload(Cart.compatibility_claims))
+        .options(
+            selectinload(Cart.items),
+            selectinload(Cart.compatibility_claims),
+            selectinload(Cart.fulfillment),
+            selectinload(Cart.offer_selection),
+            selectinload(Cart.intent_mandate),
+        )
     )
     if cart is None:
         raise CommerceError(404, "CART_NOT_FOUND", "Cart not found")
@@ -122,8 +135,7 @@ def create_cart(session: Session, request: CreateCartRequest) -> Cart:
             "currency": cart.currency,
             "total_paise": cart.total_paise,
             "items": [
-                {"product_id": item.product_id, "quantity": item.quantity}
-                for item in cart.items
+                {"product_id": item.product_id, "quantity": item.quantity} for item in cart.items
             ],
             "compatibility_claims": [
                 {
@@ -166,9 +178,8 @@ def _cart_validation_error(session: Session, cart: Cart) -> CommerceError | None
         by_category = products_by_category(all_products)
         for claim in cart.compatibility_claims:
             primary = products.get(claim.primary_product_id)
-            if (
-                primary is None
-                or claim.addon_product_id not in complement_product_ids(primary, by_category)
+            if primary is None or claim.addon_product_id not in complement_product_ids(
+                primary, by_category
             ):
                 return CommerceError(
                     409,
@@ -213,6 +224,9 @@ def _invalidate_if_hash_changed(session: Session, cart: Cart) -> None:
 
 
 def canonical_cart(cart: Cart) -> bytes:
+    fulfillment = cart.fulfillment
+    offer = cart.offer_selection
+    mandate = cart.intent_mandate
     payload = {
         "cart_id": cart.id,
         "currency": cart.currency,
@@ -239,12 +253,48 @@ def canonical_cart(cart: Cart) -> bytes:
         ],
         "subtotal_paise": cart.subtotal_paise,
         "total_paise": cart.total_paise,
+        "fulfillment": None
+        if fulfillment is None
+        else {
+            "address_fingerprint": fulfillment.address_fingerprint,
+            "address_label": fulfillment.address_label,
+            "city": fulfillment.city,
+            "pincode": fulfillment.pincode,
+            "delivery_paise": fulfillment.delivery_paise,
+            "eta_min_days": fulfillment.eta_min_days,
+            "eta_max_days": fulfillment.eta_max_days,
+        },
+        "payment_offer": None
+        if offer is None
+        else {
+            "offer_key": offer.offer_key,
+            "provider_offer_id": offer.provider_offer_id,
+            "payment_method": offer.payment_method,
+            "savings_paise": offer.savings_paise,
+            "expected_payable_paise": offer.expected_payable_paise,
+        },
+        "intent_mandate": None
+        if mandate is None
+        else {
+            "mandate_id": mandate.mandate_id,
+            "integrity_hash": mandate.integrity_hash,
+            "constraints_json": mandate.constraints_json,
+            "payment_rule": mandate.payment_rule,
+            "max_addons": mandate.max_addons,
+            "expires_at": mandate.expires_at.isoformat(),
+        },
         "version": cart.version,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 
 
-def freeze_cart(session: Session, cart_id: str, now: datetime | None = None) -> Cart:
+def freeze_cart(
+    session: Session,
+    cart_id: str,
+    now: datetime | None = None,
+    *,
+    require_checkout_context: bool = False,
+) -> Cart:
     now = now or utc_now()
     cart = load_cart(session, cart_id)
     if cart.status == "frozen" and cart.expires_at and cart.expires_at > now:
@@ -254,6 +304,29 @@ def freeze_cart(session: Session, cart_id: str, now: datetime | None = None) -> 
     if cart.status != "proposed":
         raise CommerceError(409, "INVALID_CART_STATE", f"Cannot freeze a {cart.status} cart")
     _invalidate_if_changed(session, cart)
+    if require_checkout_context and cart.fulfillment is None:
+        raise CommerceError(409, "DELIVERY_REQUIRED", "Confirm a delivery address first")
+    if require_checkout_context and cart.offer_selection is None:
+        raise CommerceError(409, "PAYMENT_OFFER_REQUIRED", "Choose a payment option first")
+    if cart.intent_mandate is not None:
+        if cart.intent_mandate.expires_at <= now:
+            raise CommerceError(
+                409, "INTENT_MANDATE_EXPIRED", "The shopping intent expired; ask Niyam again"
+            )
+        constraints = json.loads(cart.intent_mandate.constraints_json)
+        maximum_paise = constraints.get("maximum_price_paise")
+        if isinstance(maximum_paise, int) and cart.total_paise > maximum_paise:
+            raise CommerceError(
+                409,
+                "INTENT_BUDGET_EXCEEDED",
+                "The final delivered total exceeds the signed buyer budget",
+            )
+        if len(cart.compatibility_claims) > cart.intent_mandate.max_addons:
+            raise CommerceError(
+                409,
+                "INTENT_ADDON_LIMIT_EXCEEDED",
+                "The cart contains more add-ons than the signed buyer intent permits",
+            )
 
     cart.cart_hash = hashlib.sha256(canonical_cart(cart)).hexdigest()
     cart.status = "frozen"
@@ -438,6 +511,7 @@ class PaymentEvidence:
     currency: str
     signature_verified: bool
     captured: bool
+    provider_offer_id: str | None = None
 
 
 def finalise_payment(
@@ -459,6 +533,13 @@ def finalise_payment(
     payload_hash = hashlib.sha256(evidence_payload.encode()).hexdigest()
     accepted = False
     reason = "verification_failed"
+    selected_offer = session.get(CartOfferSelection, order.cart_id)
+    expected_amount = (
+        selected_offer.expected_payable_paise
+        if selected_offer and selected_offer.provider_offer_id
+        else order.total_paise
+    )
+    expected_offer_id = selected_offer.provider_offer_id if selected_offer else None
 
     if not evidence.signature_verified:
         reason = "signature_invalid"
@@ -466,8 +547,10 @@ def finalise_payment(
         reason = "payment_not_captured"
     elif order.provider_order_id != evidence.provider_order_id:
         reason = "provider_order_mismatch"
-    elif order.total_paise != evidence.amount_paise or order.currency != evidence.currency:
+    elif expected_amount != evidence.amount_paise or order.currency != evidence.currency:
         reason = "amount_or_currency_mismatch"
+    elif expected_offer_id != evidence.provider_offer_id:
+        reason = "offer_mismatch"
     elif order.status == "paid" and order.provider_payment_id == evidence.provider_payment_id:
         accepted = True
         reason = "already_finalised"
@@ -508,6 +591,7 @@ def finalise_payment(
             "amount_paise": evidence.amount_paise,
             "currency": evidence.currency,
             "captured": evidence.captured,
+            "provider_offer_id": evidence.provider_offer_id,
             "accepted": accepted,
             "reason": reason,
             "resulting_status": "paid" if accepted else order.status,

@@ -25,9 +25,7 @@ class AuthError(Exception):
 
 def _password_hash(password: str, salt: bytes | None = None) -> str:
     actual_salt = salt or secrets.token_bytes(16)
-    digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=actual_salt, n=2**14, r=8, p=1, dklen=32
-    )
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=actual_salt, n=2**14, r=8, p=1, dklen=32)
     return f"scrypt${actual_salt.hex()}${digest.hex()}"
 
 

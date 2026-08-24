@@ -47,11 +47,22 @@ import {
 } from "@/lib/agent";
 import {
   approveAndOpenCheckout,
-  prepareCartForApproval,
+  confirmDelivery,
+  createCheckoutCart,
+  finalizeCheckoutCart,
+  getAddresses,
+  getPaymentOffers,
+  reverseGeocode,
+  saveAddress,
+  selectPaymentOffer,
+  demonstrateCartRescue,
   type ApprovalCart,
+  type DeliveryAddress,
+  type DeliveryQuote,
+  type PaymentOffer,
   type PaymentReceipt,
 } from "@/lib/checkout";
-import { getCompatibleAddons, type CompatibleAddon } from "@/lib/growth";
+import { getCompatibleAddons, recordGrowthEvent, type CompatibleAddon } from "@/lib/growth";
 import { saveOrder, updateOrderWhatsApp } from "@/lib/customer";
 import {
   prepareWhatsAppConfirmation,
@@ -318,6 +329,7 @@ export function NiyamCartApp() {
           <a href="#agent">AI assistant</a>
           <Link href="/orders">My orders</Link>
           <Link href="/profile">Profile</Link>
+          <Link href="/growth">Growth ledger</Link>
         </nav>
         <div className="header-actions">
           <button className="audit-button" onClick={() => setAuditOpen(true)} aria-label="Trust & Audit">
@@ -442,7 +454,13 @@ export function NiyamCartApp() {
                     {turn.voiceInput && !answerAudio && turn.result.voice_status === "unavailable" && <small className="voice-note"><Volume2 size={13} /> Text response shown because speech playback was unavailable.</small>}
                     {turn.result.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart(turn.result.proposed_cart_id!)}>Review proposed cart <ArrowRight size={15} /></button>}
                   </div>
-                  {!!recommended.length && <ProductRecommendationCarousel products={recommended} cart={cart} updateCart={updateCart} onOpen={setSelectedProduct} />}
+                  {turn.result.intent_mandate && (
+                    <details className="intent-mandate">
+                      <summary><Hash size={14} /> Intent mandate · payment always asks</summary>
+                      <div><span>Valid for 15 minutes</span><span>Maximum add-ons: {turn.result.intent_mandate.max_addons}</span><code title={turn.result.intent_mandate.integrity_hash}>{turn.result.intent_mandate.integrity_hash}</code></div>
+                    </details>
+                  )}
+                  {!!recommended.length && <ProductRecommendationCarousel products={recommended} matchScores={turn.result.match_scores} cart={cart} updateCart={updateCart} onOpen={setSelectedProduct} />}
                 </div>
               );
             })}
@@ -493,7 +511,7 @@ function ProductCard({ product, quantity, updateCart, onOpen }: { product: Produ
   );
 }
 
-function ProductRecommendationCarousel({ products: recommended, cart, updateCart, onOpen }: { products: Product[]; cart: Cart; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void }) {
+function ProductRecommendationCarousel({ products: recommended, matchScores, cart, updateCart, onOpen }: { products: Product[]; matchScores: AgentRun["match_scores"]; cart: Cart; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void }) {
   const rail = useRef<HTMLDivElement>(null);
   const move = (direction: number) => rail.current?.scrollBy({ left: direction * 240, behavior: "smooth" });
   return (
@@ -502,6 +520,7 @@ function ProductRecommendationCarousel({ products: recommended, cart, updateCart
       <div className="recommendation-rail" ref={rail}>
         {recommended.map((product) => {
           const quantity = cart[product.id] || 0;
+          const score = matchScores.find((item) => item.product_id === product.id);
           return (
             <article className="recommendation-card" key={product.id}>
               <button className="recommendation-open" onClick={() => onOpen(product)} aria-label={`View ${product.name}`}>
@@ -509,8 +528,10 @@ function ProductRecommendationCarousel({ products: recommended, cart, updateCart
                 <span className="product-category">{product.category}</span>
                 <strong>{product.name}</strong>
                 <small><Star size={11} fill="currentColor" /> {product.rating} · {product.stock} in stock</small>
+                {score && <span className="match-score">{score.overall_score}/100 match</span>}
                 <b>{formatMoney(product.pricePaise)}</b>
               </button>
+              {score && <details className="match-details"><summary>Why this match?</summary><div>{score.components.map((component) => <p key={component.key}><span>{component.label}</span><b>{component.status === "not_requested" ? "Not requested" : `${component.score}/${component.max_score}`}</b><small>{component.evidence}</small></p>)}</div></details>}
               {quantity ? <div className="recommendation-quantity"><button onClick={() => updateCart(product.id, -1)} aria-label={`Remove one ${product.name}`}><Minus size={13} /></button><b>{quantity}</b><button onClick={() => updateCart(product.id, 1)} aria-label={`Add another ${product.name}`}><Plus size={13} /></button></div> : <button className="recommendation-add" onClick={() => updateCart(product.id, 1)}><Plus size={14} /> Add to cart</button>}
             </article>
           );
@@ -559,6 +580,22 @@ function ProductDetail({ product, quantity, updateCart, close }: { product: Prod
 
 function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { lines: { product: Product; quantity: number }[]; subtotal: number; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void; close: () => void; onScope: (scope: Partial<CommerceScopes>) => void }) {
   const [approval, setApproval] = useState<ApprovalCart | null>(null);
+  const [checkoutCartId, setCheckoutCartId] = useState<string | null>(null);
+  const [checkoutStep, setCheckoutStep] = useState<"cart" | "address" | "offer" | "approval">("cart");
+  const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [offers, setOffers] = useState<PaymentOffer[]>([]);
+  const [bestOfferKey, setBestOfferKey] = useState("standard");
+  const [selectedOfferKey, setSelectedOfferKey] = useState("standard");
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [addressVoiceRecording, setAddressVoiceRecording] = useState(false);
+  const [addressVoiceMessage, setAddressVoiceMessage] = useState<string | null>(null);
+  const addressRecorderRef = useRef<MediaRecorder | null>(null);
+  const addressStreamRef = useRef<MediaStream | null>(null);
+  const addressChunksRef = useRef<Blob[]>([]);
+  const [addressDraft, setAddressDraft] = useState({ label: "Home", recipient_name: "", phone: "+91", line1: "", locality: "", landmark: "", city: "", state: "", pincode: "", latitude: null as number | null, longitude: null as number | null, is_default: true });
   const [checkoutState, setCheckoutState] = useState<
     "idle" | "locking" | "ready" | "opening" | "paid"
   >("idle");
@@ -573,6 +610,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
   const [addonsLoading, setAddonsLoading] = useState(false);
   const [bundleRejected, setBundleRejected] = useState(false);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+  const [rescueResult, setRescueResult] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -609,11 +647,11 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
   const acceptedAddons = addonMatches.filter((match) =>
     lines.some((line) => line.product.id === match.product.id),
   );
-  const lockCart = async () => {
+  const beginDelivery = async () => {
     setCheckoutState("locking");
     setCheckoutError(null);
     try {
-      const frozen = await prepareCartForApproval(
+      const proposed = await createCheckoutCart(
         lines.map(({ product, quantity }) => ({ productId: product.id, quantity })),
         addonPrimary
           ? acceptedAddons.map((match) => ({
@@ -622,12 +660,127 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
             }))
           : [],
       );
+      const saved = await getAddresses();
+      setCheckoutCartId(proposed.id);
+      setAddresses(saved);
+      setSelectedAddressId(saved.find((address) => address.is_default)?.id || saved[0]?.id || null);
+      setShowAddressForm(!saved.length);
+      onScope({ cartId: proposed.id, orderId: null });
+      setCheckoutStep("address");
+      setCheckoutState("idle");
+    } catch (error) {
+      setCheckoutState("idle");
+      const message = error instanceof Error ? error.message : "Checkout could not begin.";
+      setCheckoutError(message);
+    }
+  };
+
+  const storeAddress = async () => {
+    setCheckoutState("locking");
+    setCheckoutError(null);
+    try {
+      const saved = await saveAddress({ ...addressDraft, landmark: addressDraft.landmark || null });
+      setAddresses((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setSelectedAddressId(saved.id);
+      setShowAddressForm(false);
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Address could not be saved.");
+    } finally {
+      setCheckoutState("idle");
+    }
+  };
+
+  const useCurrentLocation = () => {
+    setLocationMessage("Requesting browser location permission…");
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const found = await reverseGeocode(coords.latitude, coords.longitude);
+        setAddressDraft((draft) => ({ ...draft, ...found, label: "Current", latitude: coords.latitude, longitude: coords.longitude }));
+        setShowAddressForm(true);
+        setLocationMessage("Approximate address detected. Add the house details and confirm it.");
+      } catch (error) {
+        setAddressDraft((draft) => ({ ...draft, latitude: coords.latitude, longitude: coords.longitude }));
+        setShowAddressForm(true);
+        setLocationMessage(error instanceof Error ? error.message : "Location detected; enter the delivery address manually.");
+      }
+    }, () => setLocationMessage("Location permission was not granted. Choose or add an address."));
+  };
+
+  const toggleAddressVoice = async () => {
+    if (addressVoiceRecording) {
+      addressRecorderRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      addressStreamRef.current = stream;
+      addressRecorderRef.current = recorder;
+      addressChunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) addressChunksRef.current.push(event.data); };
+      recorder.onstop = async () => {
+        setAddressVoiceRecording(false);
+        addressStreamRef.current?.getTracks().forEach((track) => track.stop());
+        try {
+          const transcript = await transcribeVoice(new Blob(addressChunksRef.current, { type: recorder.mimeType || "audio/webm" }));
+          const command = `${transcript.transcript} ${transcript.normalized_text}`.toLowerCase();
+          const saved = addresses.find((item) => command.includes(item.label.toLowerCase()));
+          if (saved) {
+            setSelectedAddressId(saved.id);
+            setAddressVoiceMessage(`${saved.label} selected from voice. Tap confirm after checking the summary.`);
+          } else if (command.includes("current location") || command.includes("my location")) {
+            setAddressVoiceMessage("Current location requested by voice. Browser permission is still required.");
+            useCurrentLocation();
+          } else if (command.includes("new address") || command.includes("add address")) {
+            setShowAddressForm(true);
+            setAddressVoiceMessage("New address form opened. Enter the full address and confirm it.");
+          } else {
+            setAddressVoiceMessage(`Heard “${transcript.transcript}”. Say a saved label such as Home or Work.`);
+          }
+        } catch (error) {
+          setAddressVoiceMessage(error instanceof Error ? error.message : "Voice address could not be understood.");
+        }
+      };
+      recorder.start();
+      setAddressVoiceRecording(true);
+      setAddressVoiceMessage("Listening for Home, Work, current location, or new address…");
+    } catch {
+      setAddressVoiceMessage("Microphone permission was not granted. Select the address below.");
+    }
+  };
+
+  const confirmAddress = async () => {
+    if (!checkoutCartId || !selectedAddressId) return;
+    setCheckoutState("locking");
+    setCheckoutError(null);
+    try {
+      const quote = await confirmDelivery(checkoutCartId, selectedAddressId);
+      const paymentOffers = await getPaymentOffers(checkoutCartId);
+      setDeliveryQuote(quote);
+      setOffers(paymentOffers.items);
+      setBestOfferKey(paymentOffers.best_offer_key);
+      setSelectedOfferKey(paymentOffers.best_offer_key);
+      setCheckoutStep("offer");
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Delivery could not be confirmed.");
+    } finally {
+      setCheckoutState("idle");
+    }
+  };
+
+  const lockFinalCart = async () => {
+    if (!checkoutCartId) return;
+    setCheckoutState("locking");
+    setCheckoutError(null);
+    try {
+      await selectPaymentOffer(checkoutCartId, selectedOfferKey);
+      const frozen = await finalizeCheckoutCart(checkoutCartId);
       setApproval(frozen);
-      onScope({ cartId: frozen.id, orderId: null });
+      setCheckoutStep("approval");
       setCheckoutState("ready");
     } catch (error) {
       setCheckoutState("idle");
-      setCheckoutError(error instanceof Error ? error.message : "The cart could not be locked.");
+      setCheckoutError(error instanceof Error ? error.message : "The final cart could not be locked.");
     }
   };
 
@@ -700,6 +853,21 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
     if (whatsappState?.share_text) await navigator.clipboard.writeText(whatsappState.share_text);
   };
 
+  const runRescueDemo = async () => {
+    if (!approval) return;
+    setCheckoutError(null);
+    try {
+      const rescued = await demonstrateCartRescue(approval.id);
+      const change = rescued.changes[0];
+      setRescueResult(
+        `${change.old_product_name} → ${change.new_product_name}. Previous approval revoked; the replacement cart requires fresh review and approval.`,
+      );
+      onScope({ cartId: rescued.replacement_cart_id, orderId: null });
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "Cart rescue could not run.");
+    }
+  };
+
   return (
     <div className="drawer-layer">
       <button className="drawer-backdrop" onClick={close} aria-label="Close cart" />
@@ -730,11 +898,44 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               }}
             />
           )}
+          {checkoutStep === "address" && (
+            <section className="checkout-step-card">
+              <div className="step-title"><span>1</span><div><b>Where should we deliver?</b><small>Choose first; delivery can change the final total and ETA.</small></div></div>
+              <div className="address-options">
+                {addresses.map((address) => <label className={selectedAddressId === address.id ? "selected" : ""} key={address.id}><input type="radio" name="delivery-address" checked={selectedAddressId === address.id} onChange={() => setSelectedAddressId(address.id)} /><span><b>{address.label}{address.is_default ? " · Default" : ""}</b><small>{address.locality}, {address.city} · {address.pincode.slice(0, 3)}***</small></span></label>)}
+              </div>
+              <div className="address-actions"><button onClick={() => setShowAddressForm((value) => !value)}><Plus size={14} /> Add new</button><button onClick={useCurrentLocation}><Hash size={14} /> Use current location</button><button onClick={() => void toggleAddressVoice()}>{addressVoiceRecording ? <Square size={13} fill="currentColor" /> : <Mic size={14} />}{addressVoiceRecording ? " Stop" : " Speak address"}</button></div>
+              <small className="voice-address-note">Say “deliver to Home/Work” in any supported language. Voice selects only; it never confirms silently.</small>
+              {addressVoiceMessage && <small className="location-message">{addressVoiceMessage}</small>}
+              {locationMessage && <small className="location-message">{locationMessage}</small>}
+              {showAddressForm && <div className="address-form">
+                <input aria-label="Address label" placeholder="Home / Work" value={addressDraft.label} onChange={(event) => setAddressDraft({ ...addressDraft, label: event.target.value })} />
+                <input aria-label="Recipient name" placeholder="Recipient name" value={addressDraft.recipient_name} onChange={(event) => setAddressDraft({ ...addressDraft, recipient_name: event.target.value })} />
+                <input aria-label="Phone" placeholder="+919876543210" value={addressDraft.phone} onChange={(event) => setAddressDraft({ ...addressDraft, phone: event.target.value })} />
+                <input aria-label="House and building" placeholder="Flat / house / building" value={addressDraft.line1} onChange={(event) => setAddressDraft({ ...addressDraft, line1: event.target.value })} />
+                <input aria-label="Locality" placeholder="Street / locality" value={addressDraft.locality} onChange={(event) => setAddressDraft({ ...addressDraft, locality: event.target.value })} />
+                <input aria-label="Landmark" placeholder="Landmark (optional)" value={addressDraft.landmark} onChange={(event) => setAddressDraft({ ...addressDraft, landmark: event.target.value })} />
+                <input aria-label="City" placeholder="City" value={addressDraft.city} onChange={(event) => setAddressDraft({ ...addressDraft, city: event.target.value })} />
+                <input aria-label="State" placeholder="State" value={addressDraft.state} onChange={(event) => setAddressDraft({ ...addressDraft, state: event.target.value })} />
+                <input aria-label="Pincode" placeholder="6-digit pincode" value={addressDraft.pincode} onChange={(event) => setAddressDraft({ ...addressDraft, pincode: event.target.value.replace(/\D/g, "").slice(0, 6) })} />
+                <button className="save-address" onClick={() => void storeAddress()}>Save and select address</button>
+              </div>}
+              <button className="step-primary" onClick={() => void confirmAddress()} disabled={!selectedAddressId || checkoutState === "locking"}>{checkoutState === "locking" ? "Checking delivery…" : "Confirm address & check delivery"}<ArrowRight size={15} /></button>
+            </section>
+          )}
+          {checkoutStep === "offer" && deliveryQuote && (
+            <section className="checkout-step-card">
+              <div className="delivery-confirmed"><Check size={15} /><span><b>{deliveryQuote.address_label} confirmed · {deliveryQuote.city} {deliveryQuote.masked_pincode}</b><small>{deliveryQuote.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free delivery"} · {deliveryQuote.eta_min_days}–{deliveryQuote.eta_max_days} days</small></span></div>
+              <div className="step-title"><span>2</span><div><b>Choose your best payment option</b><small>Only merchant-approved Razorpay test offers are selectable.</small></div></div>
+              <div className="offer-options">{offers.map((offer) => <label className={`${selectedOfferKey === offer.key ? "selected" : ""} ${!offer.provider_configured || !offer.eligible ? "disabled" : ""}`} key={offer.key}><input type="radio" name="payment-offer" checked={selectedOfferKey === offer.key} disabled={!offer.provider_configured || !offer.eligible} onChange={() => setSelectedOfferKey(offer.key)} /><span><b>{offer.title}{offer.key === bestOfferKey ? " · Best saving" : ""}</b><small>{offer.reason}</small><em>{offer.savings_paise ? `Save ${formatMoney(offer.savings_paise)} · Pay ${formatMoney(offer.expected_payable_paise)}` : "No automatic discount"}</em></span></label>)}</div>
+              <button className="step-primary" onClick={() => void lockFinalCart()} disabled={checkoutState === "locking"}>{checkoutState === "locking" ? "Locking exact cart…" : "Confirm choice & lock final cart"}<ArrowRight size={15} /></button>
+            </section>
+          )}
         </div>
         {!!lines.length && <div className="cart-summary">
           <div><span>Subtotal</span><b>{formatMoney(subtotal)}</b></div>
-          <div><span>Delivery</span><b className="free">Free</b></div>
-          <div className="total-line"><span>Total</span><strong>{formatMoney(subtotal)}</strong></div>
+          <div><span>Delivery</span><b className="free">{deliveryQuote?.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free"}</b></div>
+          <div className="total-line"><span>Total</span><strong>{formatMoney(approval?.total_paise ?? subtotal + (deliveryQuote?.delivery_paise || 0))}</strong></div>
           <div className="approval-box"><ShieldCheck size={19} /><p><b>You remain in control</b><small>We’ll lock and show the exact cart again before opening Razorpay test checkout.</small></p></div>
           {approval && checkoutState !== "paid" && (
             <div className="exact-approval">
@@ -750,6 +951,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               </small>
             </div>
           )}
+          {approval && checkoutState !== "paid" && <div className="rescue-demo"><div><b>Self-healing cart rescue</b><small>Judge demo: simulate one unavailable item, preserve intent, and revoke this approval.</small></div><button onClick={() => void runRescueDemo()}>Run rescue demo</button>{rescueResult && <p>{rescueResult}</p>}</div>}
           {approval && (
             <div className="whatsapp-box">
               <label><input type="checkbox" checked={whatsappOptIn} onChange={(event) => { setWhatsappOptIn(event.target.checked); setWhatsappState(null); setWhatsappError(null); }} /><span><b><MessageCircle size={15} /> WhatsApp updates</b><small>Optional. I consent to a cart-review message and verified-payment confirmation at the number I confirm below.</small></span></label>
@@ -766,8 +968,8 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               <ArrowRight size={18} />
             </button>
           ) : (
-            <button className="checkout-button" onClick={lockCart} disabled={checkoutState === "locking"}>
-              {checkoutState === "locking" ? "Locking authoritative prices…" : "Continue to approval"}
+            <button className="checkout-button" onClick={beginDelivery} disabled={checkoutState === "locking" || checkoutStep !== "cart"}>
+              {checkoutState === "locking" ? "Starting secure checkout…" : checkoutStep === "cart" ? "Continue to delivery" : "Complete the step above"}
               <ArrowRight size={18} />
             </button>
           )}
@@ -780,6 +982,19 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
 }
 
 function GrowthBundleCard({ primary, matches, cart, subtotal, loading, rejected, onReject, onAdd, onOpen }: { primary: Product | null; matches: AddonMatch[]; cart: Cart; subtotal: number; loading: boolean; rejected: boolean; onReject: () => void; onAdd: (productId: string) => void; onOpen: (product: Product) => void }) {
+  const recordedExposure = useRef<string | null>(null);
+  useEffect(() => {
+    const first = matches[0];
+    if (!primary || !first || recordedExposure.current === first.product.id) return;
+    recordedExposure.current = first.product.id;
+    void recordGrowthEvent({
+      primary_product_id: primary.id,
+      addon_product_id: first.product.id,
+      event_type: "exposed",
+      baseline_paise: subtotal,
+      suggested_paise: subtotal + first.product.pricePaise,
+    }).catch(() => undefined);
+  }, [matches, primary, subtotal]);
   if (loading) return <div className="growth-card growth-loading"><LoaderCircle className="spin" size={17} /> Finding compatible add-ons…</div>;
   if (!primary || !matches.length) return null;
 
@@ -807,7 +1022,7 @@ function GrowthBundleCard({ primary, matches, cart, subtotal, loading, rejected,
             <img src={match.product.image} alt="" />
           </button>
           <div><b>{match.product.name}</b><small>{match.reason}</small><strong>{formatMoney(match.product.pricePaise)}</strong></div>
-          <button onClick={() => onAdd(match.product.id)}><Plus size={14} /> Add</button>
+          <button onClick={() => { void recordGrowthEvent({ primary_product_id: primary.id, addon_product_id: match.product.id, event_type: "accepted", baseline_paise: subtotal, suggested_paise: subtotal + match.product.pricePaise }).catch(() => undefined); onAdd(match.product.id); }}><Plus size={14} /> Add</button>
         </article>
       ))}
       <div className="growth-metrics">
@@ -818,7 +1033,7 @@ function GrowthBundleCard({ primary, matches, cart, subtotal, loading, rejected,
       </div>
       <div className={`growth-decision ${accepted.length ? "accepted" : rejected ? "rejected" : ""}`}>
         <span>Upsell {decision.toLowerCase()}</span>
-        {!accepted.length && !rejected && <button onClick={onReject}>Not now</button>}
+        {!accepted.length && !rejected && <button onClick={() => { const first = available[0]; if (first) void recordGrowthEvent({ primary_product_id: primary.id, addon_product_id: first.product.id, event_type: "rejected", baseline_paise: subtotal, suggested_paise: subtotal + first.product.pricePaise }).catch(() => undefined); onReject(); }}>Not now</button>}
       </div>
       <small className="growth-boundary"><ShieldCheck size={13} /> Suggestions never change your cart automatically.</small>
     </section>

@@ -1,0 +1,46 @@
+[
+  {
+    "key": "standard",
+    "title": "Pay without an offer",
+    "payment_method": "Any Razorpay method",
+    "discount_type": "none",
+    "discount_value": 0,
+    "max_discount_paise": 0,
+    "minimum_cart_paise": 0,
+    "provider_offer_env": null,
+    "terms": "Standard Razorpay test checkout; the buyer chooses the payment instrument."
+  },
+  {
+    "key": "upi_saver",
+    "title": "UPI Saver",
+    "payment_method": "UPI",
+    "discount_type": "flat",
+    "discount_value": 3000,
+    "max_discount_paise": 3000,
+    "minimum_cart_paise": 29900,
+    "provider_offer_env": "RAZORPAY_OFFER_UPI_ID",
+    "terms": "₹30 instant saving on eligible UPI payments. Razorpay validates eligibility."
+  },
+  {
+    "key": "card_10",
+    "title": "Card 10% Saver",
+    "payment_method": "Eligible credit/debit card",
+    "discount_type": "percent",
+    "discount_value": 10,
+    "max_discount_paise": 15000,
+    "minimum_cart_paise": 50000,
+    "provider_offer_env": "RAZORPAY_OFFER_CARD_ID",
+    "terms": "10% instant saving up to ₹150 on eligible cards. Razorpay validates issuer and card."
+  },
+  {
+    "key": "netbanking_75",
+    "title": "Netbanking Saver",
+    "payment_method": "Eligible netbanking bank",
+    "discount_type": "flat",
+    "discount_value": 7500,
+    "max_discount_paise": 7500,
+    "minimum_cart_paise": 99900,
+    "provider_offer_env": "RAZORPAY_OFFER_NETBANKING_ID",
+    "terms": "₹75 instant saving on an eligible bank. Razorpay validates the selected bank."
+  }
+]

@@ -17,7 +17,7 @@ from .agent_schemas import (
     ProposeCartArgs,
     SearchCatalogArgs,
 )
-from .catalog_search import search_products
+from .catalog_search import explain_product_match, search_products
 from .commerce import CommerceError, create_cart
 from .commerce_schemas import CartItemInput, CompatibilityClaimInput, CreateCartRequest
 from .models import Product
@@ -70,6 +70,7 @@ def search_catalog(db: Session, args: SearchCatalogArgs) -> dict[str, object]:
     category = args.category.strip() if args.category else None
     search_queries = [query]
     if category:
+
         def category_key(value: str) -> str:
             return " ".join(
                 token
@@ -111,6 +112,12 @@ def search_catalog(db: Session, args: SearchCatalogArgs) -> dict[str, object]:
     for match in matches:
         data = _product_data(match.product)
         data["matched_fields"] = match.matched_fields
+        explanation = explain_product_match(match.product, query, match.matched_fields)
+        data["match_score"] = {
+            "overall_score": explanation.overall_score,
+            "hard_constraints": explanation.hard_constraints,
+            "components": [component.__dict__ for component in explanation.components],
+        }
         products.append(data)
     return {"ok": True, "count": len(products), "products": products}
 

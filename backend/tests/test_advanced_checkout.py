@@ -1,0 +1,167 @@
+from pathlib import Path
+
+from app.main import create_app
+from fastapi.testclient import TestClient
+
+
+def signup(client: TestClient) -> None:
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "name": "Demo Shopper",
+            "email": "advanced@example.com",
+            "password": "SafePass123",
+        },
+    )
+    assert response.status_code == 201
+
+
+def proposed_cart(client: TestClient) -> dict[str, object]:
+    response = client.post(
+        "/api/carts", json={"items": [{"product_id": "P-001", "quantity": 1}]}
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def address(client: TestClient) -> dict[str, object]:
+    response = client.post(
+        "/api/customer/addresses",
+        json={
+            "label": "Home",
+            "recipient_name": "Demo Shopper",
+            "phone": "+919876543210",
+            "line1": "42 Test House",
+            "locality": "Indiranagar",
+            "city": "Bengaluru",
+            "state": "Karnataka",
+            "pincode": "560038",
+            "is_default": True,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_final_checkout_requires_confirmed_delivery_and_offer(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'advanced.db'}")
+    with TestClient(app) as client:
+        signup(client)
+        cart = proposed_cart(client)
+        missing_delivery = client.post(f"/api/carts/{cart['id']}/finalize")
+        saved = address(client)
+        quote = client.post(
+            f"/api/carts/{cart['id']}/delivery",
+            json={"address_id": saved["id"], "confirmed": True},
+        )
+        missing_offer = client.post(f"/api/carts/{cart['id']}/finalize")
+        selected = client.post(
+            f"/api/carts/{cart['id']}/payment-offer",
+            json={"offer_key": "standard", "confirmed": True},
+        )
+        frozen = client.post(f"/api/carts/{cart['id']}/finalize")
+        audit = client.get(f"/api/audit/cart/{cart['id']}")
+
+    assert missing_delivery.status_code == 409
+    assert missing_delivery.json()["error"] == "DELIVERY_REQUIRED"
+    assert quote.status_code == 200
+    assert quote.json()["masked_pincode"] == "560***"
+    assert missing_offer.status_code == 409
+    assert missing_offer.json()["error"] == "PAYMENT_OFFER_REQUIRED"
+    assert selected.status_code == 200
+    assert frozen.status_code == 200
+    assert frozen.json()["cart_hash"]
+    audit_text = str(audit.json())
+    assert "42 Test House" not in audit_text
+    assert "560***" in audit_text
+
+
+def test_unconfigured_offers_are_preview_only(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("RAZORPAY_OFFER_UPI_ID", raising=False)
+    app = create_app(f"sqlite:///{tmp_path / 'offers.db'}")
+    with TestClient(app) as client:
+        signup(client)
+        cart = proposed_cart(client)
+        saved = address(client)
+        client.post(
+            f"/api/carts/{cart['id']}/delivery",
+            json={"address_id": saved["id"], "confirmed": True},
+        )
+        offers = client.get(f"/api/carts/{cart['id']}/payment-offers")
+        card = next(item for item in offers.json()["items"] if item["key"] == "upi_saver")
+        forced = client.post(
+            f"/api/carts/{cart['id']}/payment-offer",
+            json={"offer_key": "upi_saver", "confirmed": True},
+        )
+
+    assert card["status"] == "preview"
+    assert card["provider_configured"] is False
+    assert forced.status_code == 409
+    assert forced.json()["error"] == "OFFER_NOT_CONFIGURED"
+
+
+def test_cart_rescue_revokes_approval_and_requires_fresh_review(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'rescue.db'}")
+    with TestClient(app) as client:
+        signup(client)
+        cart = proposed_cart(client)
+        saved = address(client)
+        client.post(
+            f"/api/carts/{cart['id']}/delivery",
+            json={"address_id": saved["id"], "confirmed": True},
+        )
+        client.post(
+            f"/api/carts/{cart['id']}/payment-offer",
+            json={"offer_key": "standard", "confirmed": True},
+        )
+        frozen = client.post(f"/api/carts/{cart['id']}/finalize").json()
+        client.post(
+            f"/api/carts/{cart['id']}/approve", json={"cart_hash": frozen["cart_hash"]}
+        )
+        rescued = client.post(
+            f"/api/carts/{cart['id']}/rescue",
+            json={"simulate_inventory_change": True},
+        )
+        assert rescued.status_code == 200, rescued.json()
+        old = client.get(f"/api/carts/{cart['id']}")
+        replacement = client.get(f"/api/carts/{rescued.json()['replacement_cart_id']}")
+
+    assert rescued.status_code == 200
+    assert rescued.json()["previous_approval_revoked"] is True
+    assert rescued.json()["requires_new_review_and_approval"] is True
+    assert rescued.json()["changes"]
+    assert old.json()["status"] == "invalidated"
+    assert replacement.json()["status"] == "proposed"
+
+
+def test_causal_growth_ledger_counts_only_accepted_uplift(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'growth.db'}")
+    with TestClient(app) as client:
+        base = {
+            "primary_product_id": "P-001",
+            "addon_product_id": "P-101",
+            "baseline_paise": 35900,
+            "suggested_paise": 61700,
+        }
+        client.post("/api/growth/events", json={**base, "event_type": "exposed"})
+        client.post("/api/growth/events", json={**base, "event_type": "rejected"})
+        client.post("/api/growth/events", json={**base, "event_type": "accepted"})
+        ledger = client.get("/api/growth/ledger")
+
+    assert ledger.status_code == 200
+    assert ledger.json()["data_mode"] == "test_demo"
+    assert ledger.json()["exposures"] == 1
+    assert ledger.json()["accepted"] == 1
+    assert ledger.json()["rejected"] == 1
+    assert ledger.json()["incremental_revenue_paise"] == 25800
+
+
+def test_reverse_geocoding_never_uses_an_unconfigured_public_service(tmp_path: Path) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'location.db'}")
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/location/reverse-geocode",
+            json={"latitude": 12.9716, "longitude": 77.5946},
+        )
+    assert response.status_code == 503
+    assert response.json()["error"] == "REVERSE_GEOCODING_NOT_CONFIGURED"

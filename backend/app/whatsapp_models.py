@@ -20,9 +20,7 @@ class WhatsAppOptIn(Base):
 
 class WhatsAppHandoff(Base):
     __tablename__ = "whatsapp_handoffs"
-    __table_args__ = (
-        UniqueConstraint("idempotency_key", name="uq_whatsapp_handoff_idempotency"),
-    )
+    __table_args__ = (UniqueConstraint("idempotency_key", name="uq_whatsapp_handoff_idempotency"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     cart_id: Mapped[str] = mapped_column(

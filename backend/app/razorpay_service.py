@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from .audit import append_audit
 from .commerce import PaymentEvidence, finalise_payment
 from .commerce_models import (
+    CartOfferSelection,
     Order,
     PaymentEvent,
     RazorpayCheckout,
@@ -118,9 +119,7 @@ class RazorpayHttpGateway:
         self, provider_order_id: str, payment_id: str, signature: str
     ) -> bool:
         message = f"{provider_order_id}|{payment_id}".encode()
-        expected = hmac.new(
-            self.settings.key_secret.encode(), message, hashlib.sha256
-        ).hexdigest()
+        expected = hmac.new(self.settings.key_secret.encode(), message, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature)
 
     def verify_webhook_signature(self, raw_body: bytes, signature: str) -> bool:
@@ -235,6 +234,11 @@ def create_razorpay_checkout(
             "mode": "test",
         },
     }
+    selected_offer = db.get(CartOfferSelection, order.cart_id)
+    if selected_offer and selected_offer.provider_offer_id:
+        request_payload["offers"] = [selected_offer.provider_offer_id]
+        request_payload["force_offer"] = True
+        request_payload["notes"]["selected_offer_key"] = selected_offer.offer_key
     try:
         provider_order = gateway.create_order(request_payload)
         provider_order_id = provider_order.get("id")
@@ -308,6 +312,7 @@ def _reconcile_fetched_payment(
     currency = payment.get("currency")
     provider_order_id = payment.get("order_id")
     captured = payment.get("captured") is True and payment.get("status") == "captured"
+    provider_offer_id = payment.get("offer_id")
     if (
         fetched_id != payment_id
         or not isinstance(amount, int)
@@ -328,6 +333,7 @@ def _reconcile_fetched_payment(
         currency=currency,
         signature_verified=True,
         captured=captured,
+        provider_offer_id=provider_offer_id if isinstance(provider_offer_id, str) else None,
     )
     return finalise_payment(db, order.id, evidence)
 
@@ -488,9 +494,7 @@ def process_razorpay_webhook(
         receipt.status = "ignored"
         receipt.reason = "unsupported_event"
         db.commit()
-        return RazorpayWebhookResponse(
-            duplicate=False, processed=False, reason="unsupported_event"
-        )
+        return RazorpayWebhookResponse(duplicate=False, processed=False, reason="unsupported_event")
     if not isinstance(provider_order_id, str) or not isinstance(payment_id, str):
         receipt.status = "ignored"
         receipt.reason = "missing_payment_entity"

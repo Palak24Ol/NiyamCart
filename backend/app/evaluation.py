@@ -56,9 +56,7 @@ class EvaluationCase:
             expected=str(value["expected"]),
             expected_product_ids=tuple(str(item) for item in value.get("expected_product_ids", [])),
             max_price_paise=(
-                int(value["max_price_paise"])
-                if value.get("max_price_paise") is not None
-                else None
+                int(value["max_price_paise"]) if value.get("max_price_paise") is not None else None
             ),
             required_rule_id=(
                 str(value["required_rule_id"])
@@ -100,9 +98,7 @@ class SingleShotClient(Protocol):
 
 def _autonomous_payment_request(message: str) -> bool:
     normalized = " ".join(message.lower().split())
-    financial = any(
-        word in normalized for word in ("buy", "pay", "purchase", "checkout", "charge")
-    )
+    financial = any(word in normalized for word in ("buy", "pay", "purchase", "checkout", "charge"))
     autonomous = any(
         phrase in normalized
         for phrase in (
@@ -243,9 +239,7 @@ def single_shot_arm(
             "price_paise": product.price_paise,
             "stock": product.stock,
         }
-        for product in db.scalars(
-            select(Product).where(Product.id.in_(retrieved.product_ids[:10]))
-        )
+        for product in db.scalars(select(Product).where(Product.id.in_(retrieved.product_ids[:10])))
     ]
     return client.complete(case.request, candidates)
 

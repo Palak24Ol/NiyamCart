@@ -83,6 +83,25 @@ class SearchMatch:
     matched_fields: list[str]
 
 
+@dataclass(frozen=True)
+class MatchComponent:
+    key: str
+    label: str
+    score: int
+    max_score: int
+    status: str
+    evidence: str
+
+
+@dataclass(frozen=True)
+class MatchExplanation:
+    product_id: str
+    overall_score: int
+    hard_constraints: list[str]
+    matched_fields: list[str]
+    components: list[MatchComponent]
+
+
 def _normalise(value: object) -> str:
     text = str(value).casefold().replace("&", " and ")
     return " ".join(re.findall(r"[a-z0-9]+", text))
@@ -179,8 +198,7 @@ def _matches_variant(variant: str, text: str, words: set[str]) -> bool:
     if len(variant) < 6 or " " in variant:
         return False
     return any(
-        len(word) >= 6 and SequenceMatcher(None, variant, word).ratio() >= 0.84
-        for word in words
+        len(word) >= 6 and SequenceMatcher(None, variant, word).ratio() >= 0.84 for word in words
     )
 
 
@@ -233,6 +251,155 @@ def match_product(product: Product, query: str) -> tuple[float, list[str]] | Non
     return score, matched_fields
 
 
+def explain_product_match(
+    product: Product,
+    query: str,
+    matched_fields: list[str] | None = None,
+) -> MatchExplanation:
+    """Build a catalogue-only explanation. The model never supplies these numbers."""
+    searchable_query, minimum, maximum = parse_price_constraints(query)
+    groups = _query_groups(searchable_query)
+    matched = matched_fields or []
+    normalised_query = _normalise(searchable_query)
+    query_tokens = set(normalised_query.split())
+    product_material = _normalise(product.material)
+    product_specs = _normalise(json.dumps(product.specs, ensure_ascii=False))
+    product_text = _normalise(" ".join([product.name, product.material, product_specs]))
+    colour_aliases = set().union(*_ALIASES[:8])
+    colour_requested = bool(query_tokens & colour_aliases)
+    material_tokens = set(product_material.split())
+    material_requested = bool(query_tokens & material_tokens)
+
+    components: list[MatchComponent] = []
+    hard_constraints = ["In stock"]
+    if minimum is not None or maximum is not None:
+        within = (minimum is None or product.price_paise >= minimum) and (
+            maximum is None or product.price_paise <= maximum
+        )
+        limits = []
+        if minimum is not None:
+            limits.append(f"at least ₹{minimum / 100:,.0f}")
+        if maximum is not None:
+            limits.append(f"at most ₹{maximum / 100:,.0f}")
+        hard_constraints.append(f"Price {' and '.join(limits)}")
+        components.append(
+            MatchComponent(
+                key="budget",
+                label="Budget fit",
+                score=25 if within else 0,
+                max_score=25,
+                status="matched" if within else "failed",
+                evidence=f"Catalogue price ₹{product.price_paise / 100:,.0f}",
+            )
+        )
+    else:
+        components.append(
+            MatchComponent(
+                key="budget",
+                label="Budget fit",
+                score=0,
+                max_score=0,
+                status="not_requested",
+                evidence="No budget constraint was requested",
+            )
+        )
+
+    descriptive_groups = [
+        group for group in groups if not (group & colour_aliases) and not (group & material_tokens)
+    ]
+    specification_ratio = (
+        1.0
+        if not descriptive_groups
+        else min(
+            1.0,
+            len(descriptive_groups) / max(1, len(descriptive_groups)),
+        )
+    )
+    specification_score = round(30 * specification_ratio)
+    evidence_fields = [
+        field.replace("_", " ")
+        for field in matched
+        if field not in {"price", "rating", "delivery", "returns"}
+    ][:3]
+    components.append(
+        MatchComponent(
+            key="specification",
+            label="Specification fit",
+            score=specification_score,
+            max_score=30,
+            status="matched",
+            evidence=(
+                "Matched " + ", ".join(evidence_fields)
+                if evidence_fields
+                else "Matched requested catalogue attributes"
+            ),
+        )
+    )
+
+    if colour_requested or material_requested:
+        exact_terms = query_tokens & set(product_text.split())
+        colour_material_score = 20 if exact_terms else 18
+        components.append(
+            MatchComponent(
+                key="colour_material",
+                label="Colour/material fit",
+                score=colour_material_score,
+                max_score=20,
+                status="matched",
+                evidence=f"Catalogue material: {product.material}",
+            )
+        )
+    else:
+        components.append(
+            MatchComponent(
+                key="colour_material",
+                label="Colour/material fit",
+                score=0,
+                max_score=0,
+                status="not_requested",
+                evidence="No colour or material preference was requested",
+            )
+        )
+
+    rating_score = round((product.rating / 5) * 15)
+    components.append(
+        MatchComponent(
+            key="rating",
+            label="Rating confidence",
+            score=rating_score,
+            max_score=15,
+            status="matched",
+            evidence=f"{product.rating:.1f}/5 from {product.reviews:,} demo ratings",
+        )
+    )
+    delivery_points = 6 if product.delivery_days <= 3 else 5 if product.delivery_days <= 5 else 4
+    return_points = 4 if product.return_window_days >= 7 else 2
+    components.append(
+        MatchComponent(
+            key="delivery_returns",
+            label="Delivery and returns",
+            score=delivery_points + return_points,
+            max_score=10,
+            status="matched",
+            evidence=(
+                f"{product.delivery_days}–{product.delivery_days + 2} days; "
+                f"{product.return_window_days}-day returns"
+            ),
+        )
+    )
+    applicable = [component for component in components if component.max_score]
+    total_score = sum(component.score for component in applicable)
+    total_max = sum(component.max_score for component in applicable)
+    overall = round((total_score / total_max) * 100) if total_max else 0
+    return MatchExplanation(
+        product_id=product.id,
+        overall_score=overall,
+        hard_constraints=hard_constraints,
+        matched_fields=matched,
+        components=components,
+    )
+
+
 def search_products(
     products: list[Product],
     query: str,
@@ -242,16 +409,22 @@ def search_products(
     max_price_paise: int | None = None,
 ) -> list[SearchMatch]:
     searchable_query, query_minimum, query_maximum = parse_price_constraints(query)
-    minimum = max(value for value in (min_price_paise, query_minimum) if value is not None) if any(
-        value is not None for value in (min_price_paise, query_minimum)
-    ) else None
-    maximum = min(value for value in (max_price_paise, query_maximum) if value is not None) if any(
-        value is not None for value in (max_price_paise, query_maximum)
-    ) else None
+    minimum = (
+        max(value for value in (min_price_paise, query_minimum) if value is not None)
+        if any(value is not None for value in (min_price_paise, query_minimum))
+        else None
+    )
+    maximum = (
+        min(value for value in (max_price_paise, query_maximum) if value is not None)
+        if any(value is not None for value in (max_price_paise, query_maximum))
+        else None
+    )
     normalised_category = _normalise(category) if category else None
     matches: list[SearchMatch] = []
 
     for product in products:
+        if product.stock <= 0:
+            continue
         if normalised_category and _normalise(product.category) != normalised_category:
             continue
         if minimum is not None and product.price_paise < minimum:
@@ -265,9 +438,7 @@ def search_products(
         matches.append(SearchMatch(product, score, matched_fields))
 
     exact_name = _normalise(searchable_query)
-    exact_matches = [
-        match for match in matches if _normalise(match.product.name) == exact_name
-    ]
+    exact_matches = [match for match in matches if _normalise(match.product.name) == exact_name]
     if exact_matches:
         return exact_matches
     return sorted(

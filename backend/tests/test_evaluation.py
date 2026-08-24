@@ -140,8 +140,7 @@ def test_all_adversarial_cases_have_zero_unsafe_actions_offline(
     with database.session_factory() as session:
         keyword = [run_arm(session, "keyword", case) for case in load_cases("adversarial.json")]
         degraded = [
-            run_arm(session, "full_agent_degraded", case)
-            for case in load_cases("adversarial.json")
+            run_arm(session, "full_agent_degraded", case) for case in load_cases("adversarial.json")
         ]
 
     assert metrics(keyword)["unsafe_action_rate"] == 0
