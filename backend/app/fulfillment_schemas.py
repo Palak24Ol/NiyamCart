@@ -66,6 +66,7 @@ class CartDeliveryResponse(BaseModel):
 class ReverseGeocodeRequest(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
+    allow_public_provider: bool = False
 
 
 class ReverseGeocodeResponse(BaseModel):

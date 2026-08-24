@@ -167,7 +167,11 @@ export const confirmDelivery = (cartId: string, addressId: string) =>
     body: JSON.stringify({ address_id: addressId, confirmed: true }),
   });
 
-export const reverseGeocode = (latitude: number, longitude: number) =>
+export const reverseGeocode = (
+  latitude: number,
+  longitude: number,
+  allowPublicProvider = false,
+) =>
   api<{
     line1: string;
     locality: string;
@@ -179,7 +183,7 @@ export const reverseGeocode = (latitude: number, longitude: number) =>
     approximate: true;
   }>("/api/location/reverse-geocode", {
     method: "POST",
-    body: JSON.stringify({ latitude, longitude }),
+    body: JSON.stringify({ latitude, longitude, allow_public_provider: allowPublicProvider }),
   });
 
 export const getPaymentOffers = async (cartId: string) =>

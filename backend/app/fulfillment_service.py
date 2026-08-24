@@ -157,12 +157,13 @@ def confirm_cart_delivery(
 def reverse_geocode(payload: ReverseGeocodeRequest) -> ReverseGeocodeResponse:
     base_url = os.getenv("REVERSE_GEOCODING_URL", "").strip()
     if not base_url:
-        raise CommerceError(
-            503,
-            "REVERSE_GEOCODING_NOT_CONFIGURED",
-            "Location was detected, but private address lookup is not configured. "
-            "Complete the address manually.",
-        )
+        if not payload.allow_public_provider:
+            raise CommerceError(
+                428,
+                "LOCATION_SHARING_CONFIRMATION_REQUIRED",
+                "Confirm before sharing precise coordinates with OpenStreetMap.",
+            )
+        base_url = "https://nominatim.openstreetmap.org/reverse"
     try:
         response = httpx.get(
             base_url,

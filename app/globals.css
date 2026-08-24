@@ -550,6 +550,11 @@ a { color: inherit; text-decoration: none; }
 .step-title > span { width: 24px; height: 24px; border-radius: 50%; color: white; background: var(--green); display: grid; place-items: center; flex: 0 0 auto; font-size: 11px; font-weight: 800; }
 .step-title div, .delivery-confirmed span { display: grid; gap: 2px; }
 .step-title small, .delivery-confirmed small, .voice-address-note, .location-message { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.location-consent { padding: 10px; border: 1px solid #d7c27b; border-radius: 9px; background: #fffaf0; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; }
+.location-consent > svg { color: #8a6b17; }
+.location-consent p { margin: 0; display: grid; gap: 2px; }
+.location-consent p small { color: var(--muted); font-size: 9px; line-height: 1.35; }
+.location-consent button { padding: 7px 8px; border: 1px solid #d7c27b; border-radius: 7px; color: #654e13; background: white; font-size: 9px; font-weight: 800; }
 .address-options, .offer-options { display: grid; gap: 7px; }
 .address-options label, .offer-options label { padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: white; display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .address-options label.selected, .offer-options label.selected { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
@@ -585,4 +590,4 @@ a { color: inherit; text-decoration: none; }
 .ledger-proof p { max-width: 700px; color: #ccded3; line-height: 1.5; }
 .ledger-proof > div { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.13); display: flex; justify-content: space-between; }
 .ledger-proof > small { margin-top: 14px; color: #d5e5da; display: flex; align-items: center; gap: 5px; }
-@media (max-width: 760px) { .ledger-metrics { grid-template-columns: 1fr 1fr; } .growth-ledger-shell > header { flex-direction: column; } .address-form { grid-template-columns: 1fr; } .address-form .save-address { grid-column: auto; } }
+@media (max-width: 760px) { .ledger-metrics { grid-template-columns: 1fr 1fr; } .growth-ledger-shell > header { flex-direction: column; } .address-form { grid-template-columns: 1fr; } .address-form .save-address { grid-column: auto; } .location-consent { grid-template-columns: auto 1fr; } .location-consent button { grid-column: 2; } }

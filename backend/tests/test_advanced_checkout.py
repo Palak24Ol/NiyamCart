@@ -156,15 +156,61 @@ def test_causal_growth_ledger_counts_only_accepted_uplift(tmp_path: Path) -> Non
     assert ledger.json()["incremental_revenue_paise"] == 25800
 
 
-def test_reverse_geocoding_never_uses_an_unconfigured_public_service(tmp_path: Path) -> None:
+def test_reverse_geocoding_requires_explicit_public_provider_consent(tmp_path: Path) -> None:
     app = create_app(f"sqlite:///{tmp_path / 'location.db'}")
     with TestClient(app) as client:
         response = client.post(
             "/api/location/reverse-geocode",
             json={"latitude": 12.9716, "longitude": 77.5946},
         )
-    assert response.status_code == 503
-    assert response.json()["error"] == "REVERSE_GEOCODING_NOT_CONFIGURED"
+    assert response.status_code == 428
+    assert response.json()["error"] == "LOCATION_SHARING_CONFIRMATION_REQUIRED"
+
+
+def test_reverse_geocoding_uses_public_provider_only_after_consent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "display_name": "MG Road, Bengaluru, Karnataka, 560001, India",
+                "address": {
+                    "road": "MG Road",
+                    "suburb": "Ashok Nagar",
+                    "city": "Bengaluru",
+                    "state": "Karnataka",
+                    "postcode": "560001",
+                    "country_code": "in",
+                },
+            }
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_get(url: str, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse()
+
+    monkeypatch.delenv("REVERSE_GEOCODING_URL", raising=False)
+    monkeypatch.setattr("app.fulfillment_service.httpx.get", fake_get)
+    app = create_app(f"sqlite:///{tmp_path / 'location-consent.db'}")
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/location/reverse-geocode",
+            json={
+                "latitude": 12.9716,
+                "longitude": 77.5946,
+                "allow_public_provider": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["city"] == "Bengaluru"
+    assert response.json()["pincode"] == "560001"
+    assert calls[0][0] == "https://nominatim.openstreetmap.org/reverse"
+    assert calls[0][1]["params"]["lat"] == 12.9716
 
 
 def test_bedsheet_cross_sell_is_a_scored_home_complement(tmp_path: Path) -> None:

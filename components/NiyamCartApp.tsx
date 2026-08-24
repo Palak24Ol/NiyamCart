@@ -590,6 +590,10 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
   const [selectedOfferKey, setSelectedOfferKey] = useState("standard");
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [pendingCoordinates, setPendingCoordinates] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [addressVoiceRecording, setAddressVoiceRecording] = useState(false);
   const [addressVoiceMessage, setAddressVoiceMessage] = useState<string | null>(null);
   const addressRecorderRef = useRef<MediaRecorder | null>(null);
@@ -692,18 +696,46 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
 
   const useCurrentLocation = () => {
     setLocationMessage("Requesting browser location permission…");
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      try {
-        const found = await reverseGeocode(coords.latitude, coords.longitude);
-        setAddressDraft((draft) => ({ ...draft, ...found, label: "Current", latitude: coords.latitude, longitude: coords.longitude }));
-        setShowAddressForm(true);
-        setLocationMessage("Approximate address detected. Add the house details and confirm it.");
-      } catch (error) {
-        setAddressDraft((draft) => ({ ...draft, latitude: coords.latitude, longitude: coords.longitude }));
-        setShowAddressForm(true);
-        setLocationMessage(error instanceof Error ? error.message : "Location detected; enter the delivery address manually.");
-      }
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      setPendingCoordinates({ latitude: coords.latitude, longitude: coords.longitude });
+      setAddressDraft((draft) => ({
+        ...draft,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      }));
+      setLocationMessage(
+        "Location detected. Choose whether to share it with OpenStreetMap for an approximate address.",
+      );
     }, () => setLocationMessage("Location permission was not granted. Choose or add an address."));
+  };
+
+  const lookupCurrentAddress = async () => {
+    if (!pendingCoordinates) return;
+    setLocationMessage("Finding an approximate address…");
+    try {
+      const found = await reverseGeocode(
+        pendingCoordinates.latitude,
+        pendingCoordinates.longitude,
+        true,
+      );
+      setAddressDraft((draft) => ({
+        ...draft,
+        ...found,
+        label: "Current",
+        latitude: pendingCoordinates.latitude,
+        longitude: pendingCoordinates.longitude,
+      }));
+      setShowAddressForm(true);
+      setPendingCoordinates(null);
+      setLocationMessage(
+        "Approximate address found. Add the house number or landmark and confirm every field.",
+      );
+    } catch (error) {
+      setShowAddressForm(true);
+      setLocationMessage(
+        error instanceof Error ? error.message : "Address lookup failed. Complete it manually.",
+      );
+    }
   };
 
   const toggleAddressVoice = async () => {
@@ -908,6 +940,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               <small className="voice-address-note">Say “deliver to Home/Work” in any supported language. Voice selects only; it never confirms silently.</small>
               {addressVoiceMessage && <small className="location-message">{addressVoiceMessage}</small>}
               {locationMessage && <small className="location-message">{locationMessage}</small>}
+              {pendingCoordinates && <div className="location-consent"><ShieldCheck size={16} /><p><b>Share location with OpenStreetMap?</b><small>Only latitude and longitude are sent to Nominatim to find an approximate address. They are not sent to the shopping LLM or written to the audit trail.</small></p><button onClick={() => void lookupCurrentAddress()}>Find address</button><button onClick={() => { setPendingCoordinates(null); setShowAddressForm(true); setLocationMessage("Coordinates were not shared. Enter the address manually."); }}>Enter manually</button></div>}
               {showAddressForm && <div className="address-form">
                 <input aria-label="Address label" placeholder="Home / Work" value={addressDraft.label} onChange={(event) => setAddressDraft({ ...addressDraft, label: event.target.value })} />
                 <input aria-label="Recipient name" placeholder="Recipient name" value={addressDraft.recipient_name} onChange={(event) => setAddressDraft({ ...addressDraft, recipient_name: event.target.value })} />
