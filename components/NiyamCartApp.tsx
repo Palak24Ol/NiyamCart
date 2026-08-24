@@ -31,6 +31,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney, formatSpecLabel, products, searchProducts, type Product } from "@/lib/catalog";
 import {
@@ -51,6 +52,7 @@ import {
   type PaymentReceipt,
 } from "@/lib/checkout";
 import { getCompatibleAddons, type CompatibleAddon } from "@/lib/growth";
+import { saveOrder, updateOrderWhatsApp } from "@/lib/customer";
 import {
   prepareWhatsAppConfirmation,
   prepareWhatsAppReview,
@@ -314,7 +316,8 @@ export function NiyamCartApp() {
         <nav className="desktop-nav" aria-label="Main navigation">
           <a className="active" href="#shop">Shop</a>
           <a href="#agent">AI assistant</a>
-          <a href="#trust">How it works</a>
+          <Link href="/orders">My orders</Link>
+          <Link href="/profile">Profile</Link>
         </nav>
         <div className="header-actions">
           <button className="audit-button" onClick={() => setAuditOpen(true)} aria-label="Trust & Audit">
@@ -326,7 +329,7 @@ export function NiyamCartApp() {
             <span>Cart</span>
             {cartCount > 0 && <b>{cartCount}</b>}
           </button>
-          <button className="avatar" aria-label="Account"><UserRound size={19} /></button>
+          <Link className="avatar" href="/profile" aria-label="Account profile"><UserRound size={19} /></Link>
         </div>
       </header>
 
@@ -636,6 +639,19 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
       const verified = await approveAndOpenCheckout(approval);
       setReceipt(verified);
       onScope({ cartId: approval.id, orderId: verified.orderId });
+      saveOrder({
+        ...verified,
+        cartId: approval.id,
+        cartHash: approval.cart_hash,
+        items: lines.map(({ product, quantity }) => ({
+          productId: product.id,
+          name: product.name,
+          image: product.image,
+          quantity,
+          unitPricePaise: product.pricePaise,
+        })),
+        whatsappStatus: whatsappOptIn ? "Review message prepared" : "Not requested",
+      });
       setCheckoutState("paid");
       if (whatsappOptIn && whatsappState) {
         try {
@@ -644,6 +660,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
             whatsappDestination,
           );
           setWhatsappState(confirmation);
+          updateOrderWhatsApp(verified.orderId, confirmation.message);
         } catch (error) {
           setWhatsappError(
             error instanceof Error ? error.message : "Confirmation handoff is unavailable.",

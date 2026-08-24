@@ -154,6 +154,15 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 - [ ] Demo has been rehearsed three times under five minutes.
 - [ ] Submission form is reviewed before final submission.
 
+## Phase 11 - Customer account experience
+
+- [x] Add functional login and sign-up pages.
+- [x] Hash passwords server-side with unique salts.
+- [x] Store opaque sessions in HttpOnly SameSite cookies.
+- [x] Add authenticated Profile and My Orders routes.
+- [x] Keep payment credentials out of profile and order storage.
+- [x] Scope browser-retained preferences and receipts by signed-in account.
+
 ## Final acceptance checklist
 
 - [x] One natural-language buyer request reaches one verified Razorpay test payment.

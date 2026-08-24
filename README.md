@@ -52,9 +52,11 @@ The clean frontend/backend foundation is implemented with:
 - Separate judge-facing Trust & Audit drawer with redacted, hash-chained agent, cart, and order evidence.
 - One-click autonomous-payment refusal demo with the exact policy rule and zero commerce side effects.
 - Post-payment receipt with order, amount, Razorpay test-payment, timestamp, and WhatsApp state.
+- Functional login and sign-up with scrypt password hashing and HttpOnly cookie sessions.
+- Protected My Orders and Profile pages with account-scoped browser storage for MVP preferences and receipts.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
-- 90 automated tests spanning unit, integration, randomized properties, reliability, and races.
+- 92 automated tests spanning unit, integration, randomized properties, reliability, and races.
 
 The frontend calls the bounded agent API directly. Shopper chat shows grounded products, policy
 refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and
@@ -80,6 +82,11 @@ python -m uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
 Open `http://localhost:8000/docs` for the local API explorer.
+
+Login and sign-up are available at `http://localhost:3000/auth`. Development uses an HttpOnly,
+SameSite cookie; set `AUTH_COOKIE_SECURE=true` behind production HTTPS. Passwords are stored only as
+salted scrypt hashes. Profile preferences and verified order receipts remain account-scoped in the
+current browser for this MVP and are not sent to the shopping agent.
 
 ## Deterministic commerce flow
 

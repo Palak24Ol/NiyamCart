@@ -12,8 +12,12 @@
   ERP, and the synthetic compatibility rules should not be treated as universal product expertise.
 - SQLite is intended for local demonstration. A production deployment should use PostgreSQL and
   validate its row-locking/concurrency behavior under load.
-- Authentication, customer accounts, addresses, fulfilment, refunds, taxes, and real-money mode are
-  intentionally out of scope.
+- Basic local authentication is implemented with scrypt password hashes and HttpOnly cookie
+  sessions. Email verification, password recovery, server-side profile/order history, login rate
+  limiting, addresses, fulfilment, refunds, taxes, and real-money mode remain out of scope.
+- Profile preferences and My Orders receipts are account-scoped but retained only in the current
+  browser. They do not sync across devices and should move to authenticated server storage before
+  production deployment.
 - Payment is Razorpay test mode only. Live keys are rejected.
 - The public audit is tamper-evident, not an externally anchored ledger. A database administrator
   able to rewrite both events and hashes is outside its threat model.

@@ -30,7 +30,7 @@ a { color: inherit; text-decoration: none; }
 .desktop-nav a.active, .desktop-nav a:hover { color: var(--ink); }
 .desktop-nav a.active:after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--green); }
 .header-actions { display: flex; align-items: center; gap: 8px; }
-.icon-button, .avatar { width: 39px; height: 39px; border: 0; border-radius: 50%; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.icon-button, .avatar { width: 39px; height: 39px; border: 0; border-radius: 50%; background: transparent; color: var(--ink); display: grid; place-items: center; cursor: pointer; text-decoration: none; }
 .icon-button:hover { background: #e9ebe6; }
 .avatar { background: #e2eadf; }
 .cart-button { border: 1px solid var(--line); background: white; border-radius: 999px; min-height: 40px; padding: 0 14px; display: flex; align-items: center; gap: 7px; cursor: pointer; box-shadow: 0 3px 12px rgba(20,34,29,.04); }
@@ -340,6 +340,103 @@ a { color: inherit; text-decoration: none; }
 .audit-timeline p { margin: 0; color: #4f5c56; font-size: 10px; line-height: 1.4; }
 .audit-timeline small { color: #87918c; font-size: 8px; }
 
+.account-shell { min-height: 100vh; background: #f7f6f1; color: var(--ink); }
+.account-header-actions { display: flex; align-items: center; gap: 7px; }
+.account-header-actions a { height: 40px; padding: 0 13px; border: 1px solid transparent; border-radius: 999px; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-decoration: none; }
+.account-header-actions a.selected { border-color: #c9d9cf; background: #e5eee8; color: var(--green); }
+.account-main { width: min(1120px, calc(100% - 40px)); min-height: calc(100vh - 130px); margin: 0 auto; padding: 58px 0 72px; }
+.account-footer { min-height: 58px; padding: 18px 24px; border-top: 1px solid var(--line); color: var(--muted); display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 11px; text-align: center; }
+.account-hero { margin-bottom: 34px; display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; }
+.account-hero h1 { margin: 7px 0 9px; font: 700 clamp(38px, 6vw, 62px) "Manrope"; letter-spacing: -2.5px; }
+.account-hero p { max-width: 650px; margin: 0; color: var(--muted); font-size: 16px; line-height: 1.55; }
+.account-hero-badge { max-width: 250px; padding: 15px 17px; border: 1px solid #c8ddcf; border-radius: 14px; background: #edf7f0; color: var(--green); display: flex; align-items: center; gap: 10px; }
+.account-hero-badge span, .order-item span, .profile-form > header span, .profile-safety > div span { display: grid; gap: 3px; }
+.account-hero-badge b { font-size: 12px; }
+.account-hero-badge small { color: #60736a; font-size: 10px; line-height: 1.35; }
+.orders-loading { min-height: 230px; border: 1px dashed #bdc8c1; border-radius: 18px; color: var(--muted); display: flex; justify-content: center; align-items: center; gap: 8px; }
+.orders-empty { min-height: 380px; padding: 50px 24px; border: 1px solid var(--line); border-radius: 22px; background: white; display: grid; place-items: center; align-content: center; text-align: center; }
+.orders-empty > span { width: 68px; height: 68px; border-radius: 20px; background: #e6f1e9; color: var(--green); display: grid; place-items: center; }
+.orders-empty h2 { margin: 18px 0 6px; font: 700 23px "Manrope"; }
+.orders-empty p { max-width: 440px; margin: 0 0 22px; color: var(--muted); line-height: 1.5; }
+.orders-empty .primary-button { text-decoration: none; }
+.orders-list { display: grid; gap: 18px; }
+.order-card { border: 1px solid var(--line); border-radius: 20px; background: white; overflow: hidden; box-shadow: 0 9px 30px rgba(29,45,38,.05); }
+.order-card > header { padding: 20px 22px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.order-card > header h2 { margin: 7px 0 3px; font: 700 20px "Manrope"; }
+.order-card > header p { margin: 0; color: var(--muted); font-size: 11px; }
+.order-card > header > strong { font: 700 20px "Manrope"; }
+.order-status { width: fit-content; padding: 5px 8px; border-radius: 999px; background: #e2f2e7; color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; }
+.order-items { padding: 4px 22px; }
+.order-item { padding: 13px 0; border-bottom: 1px solid #edf0ed; display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 12px; }
+.order-item:last-child { border-bottom: 0; }
+.order-item img { width: 54px; height: 54px; border-radius: 10px; object-fit: cover; background: #edf0ed; }
+.order-item b { font-size: 13px; }
+.order-item small { color: var(--muted); font-size: 10px; }
+.order-item > strong { font-size: 12px; }
+.order-evidence { margin: 6px 22px 18px; padding: 13px; border-radius: 12px; background: #f3f5f2; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.order-evidence > div { min-width: 0; display: grid; gap: 3px; }
+.order-evidence dt { color: var(--muted); font-size: 9px; }
+.order-evidence dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 10px monospace; }
+.order-card > footer { padding: 13px 22px; border-top: 1px solid var(--line); background: #fafbf8; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.order-card > footer span { color: var(--green); display: flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 800; }
+.order-card > footer a { color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; text-decoration: none; }
+.profile-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr); gap: 20px; align-items: start; }
+.profile-account { display: grid; justify-items: center; gap: 8px; }
+.profile-account > button { border: 0; background: transparent; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; cursor: pointer; }
+.profile-avatar { position: relative; width: 78px; height: 78px; border-radius: 24px; background: var(--ink); color: #b9d8c6; display: grid; place-items: center; }
+.profile-avatar span { position: absolute; right: -5px; bottom: -5px; width: 28px; height: 28px; border: 3px solid #f7f6f1; border-radius: 50%; background: var(--green); color: white; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+.profile-form, .profile-safety { border: 1px solid var(--line); border-radius: 20px; background: white; }
+.profile-form > header { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.profile-form > header > div { display: flex; align-items: center; gap: 9px; color: var(--green); }
+.profile-form > header b { color: var(--ink); font: 700 15px "Manrope"; }
+.profile-form > header small { color: var(--muted); font-size: 10px; }
+.profile-fields { padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 17px; }
+.profile-fields label, .auth-card form > label { display: grid; gap: 7px; }
+.profile-fields label > span, .auth-card form label > span { font-size: 11px; font-weight: 700; }
+.profile-fields input, .profile-fields select, .auth-card input { width: 100%; height: 45px; padding: 0 12px; border: 1px solid #ccd3cf; border-radius: 10px; background: white; color: var(--ink); font: inherit; outline: none; }
+.profile-fields input:focus, .profile-fields select:focus, .auth-card input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(45,113,79,.1); }
+.profile-consent { margin: 0 20px; padding: 14px; border: 1px solid #d8e2dc; border-radius: 12px; background: #f5f9f6; display: grid; grid-template-columns: auto auto 1fr; align-items: start; gap: 9px; cursor: pointer; }
+.profile-consent input { margin-top: 2px; }
+.profile-consent > span { display: grid; gap: 3px; }
+.profile-consent b { font-size: 11px; }
+.profile-consent small { color: var(--muted); font-size: 9px; }
+.profile-save { padding: 18px 20px; display: flex; align-items: center; gap: 12px; }
+.profile-save button { padding: 11px 15px; border: 0; border-radius: 10px; background: var(--green); color: white; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; cursor: pointer; }
+.profile-save > span { color: var(--green); display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; }
+.profile-safety { padding: 20px; }
+.profile-safety h2 { margin: 0 0 15px; font: 700 17px "Manrope"; }
+.profile-safety > div { padding: 13px 0; border-bottom: 1px solid var(--line); color: var(--green); display: flex; align-items: flex-start; gap: 9px; }
+.profile-safety > div b { color: var(--ink); font-size: 11px; }
+.profile-safety > div small { color: var(--muted); font-size: 9px; line-height: 1.4; }
+.profile-safety > p { margin: 16px 0 0; padding: 10px; border-radius: 9px; background: #edf6f0; color: var(--green); display: flex; align-items: flex-start; gap: 5px; font-size: 9px; line-height: 1.4; }
+.auth-page { min-height: 100vh; display: grid; grid-template-columns: minmax(400px, .92fr) minmax(480px, 1.08fr); background: #f7f6f1; }
+.auth-story { min-height: 100vh; padding: 48px clamp(38px, 6vw, 88px); background: var(--ink); color: white; display: flex; flex-direction: column; justify-content: space-between; }
+.auth-brand { color: white; text-decoration: none; }
+.auth-story h1 { margin: 18px 0; font: 700 clamp(38px, 5vw, 65px) "Manrope"; letter-spacing: -2.7px; line-height: 1.03; }
+.auth-story h1 em { color: #a9dabb; font-style: normal; }
+.auth-story p { max-width: 570px; color: #b9c6c0; font-size: 16px; line-height: 1.55; }
+.auth-story ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; color: #d6e2dc; font-size: 11px; }
+.auth-story li { display: flex; align-items: center; gap: 8px; }
+.auth-story li svg { color: #a8dcba; }
+.auth-panel { padding: 45px 28px; display: grid; place-items: center; }
+.auth-card { width: min(440px, 100%); padding: 28px; border: 1px solid var(--line); border-radius: 22px; background: white; box-shadow: 0 18px 55px rgba(24,40,33,.09); }
+.auth-tabs { margin-bottom: 28px; padding: 4px; border-radius: 11px; background: #eff2ef; display: grid; grid-template-columns: 1fr 1fr; }
+.auth-tabs button { height: 38px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-weight: 700; cursor: pointer; }
+.auth-tabs button.active { background: white; color: var(--green); box-shadow: 0 3px 12px rgba(25,42,34,.08); }
+.auth-card > header h2 { margin: 7px 0 7px; font: 700 25px "Manrope"; letter-spacing: -.8px; }
+.auth-card > header p { margin: 0 0 24px; color: var(--muted); font-size: 12px; }
+.auth-card form { display: grid; gap: 15px; }
+.auth-card form label small { color: var(--muted); font-size: 9px; }
+.password-field { position: relative; }
+.password-field input { padding-right: 44px; }
+.password-field button { position: absolute; inset: 0 0 0 auto; width: 42px; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.auth-submit { height: 46px; margin-top: 4px; border: 0; border-radius: 10px; background: var(--green); color: white; display: flex; justify-content: center; align-items: center; gap: 7px; font-weight: 800; cursor: pointer; }
+.auth-submit:disabled { opacity: .65; cursor: wait; }
+.auth-error { margin: 0; padding: 9px 10px; border-radius: 8px; background: #fff0ed; color: #a44137; font-size: 10px; }
+.auth-switch { margin: 19px 0 0; color: var(--muted); font-size: 11px; text-align: center; }
+.auth-switch button { border: 0; background: transparent; color: var(--green); font: inherit; font-weight: 800; cursor: pointer; }
+.auth-boundary { margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); color: var(--muted); display: flex; justify-content: center; align-items: center; gap: 5px; font-size: 9px; }
+
 @media (max-width: 980px) {
   .desktop-nav { display: none; }
   .hero { grid-template-columns: 1fr; padding-top: 55px; }
@@ -351,6 +448,11 @@ a { color: inherit; text-decoration: none; }
   .shop-tools { flex-wrap: wrap; }
   .search-box { max-width: none; flex-basis: 100%; }
   .sort-button { margin-left: auto; }
+  .auth-page { grid-template-columns: 1fr; }
+  .auth-story { min-height: auto; padding: 32px; gap: 70px; }
+  .auth-story ul { display: none; }
+  .auth-panel { padding: 38px 20px 60px; }
+  .profile-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -360,8 +462,26 @@ a { color: inherit; text-decoration: none; }
   .growth-metrics .aov-metric { grid-column: 1 / -1; padding: 8px 0 0; border-left: 0; border-top: 1px solid rgba(255,255,255,.18); }
   .failure-demo { align-items: stretch; flex-direction: column; }
   .failure-demo button { justify-content: center; }
+  .account-main { width: min(100% - 28px, 1120px); padding: 36px 0 56px; }
+  .account-header-actions a { width: 38px; padding: 0; justify-content: center; }
+  .account-header-actions a span { display: none; }
+  .account-hero { align-items: flex-start; flex-direction: column; }
+  .account-hero h1 { font-size: 40px; letter-spacing: -1.8px; }
+  .account-hero p { font-size: 13px; }
+  .account-hero-badge { max-width: none; width: 100%; }
+  .order-card > header { align-items: flex-start; }
+  .order-card > header > strong { font-size: 16px; }
+  .order-evidence { grid-template-columns: 1fr; }
+  .order-card > footer { align-items: flex-start; flex-direction: column; }
+  .profile-fields { grid-template-columns: 1fr; }
+  .profile-account { width: 100%; grid-template-columns: auto 1fr; align-items: center; justify-items: start; }
+  .auth-story { padding: 26px 22px; gap: 46px; }
+  .auth-story h1 { font-size: 37px; letter-spacing: -1.8px; }
+  .auth-story p { font-size: 13px; }
+  .auth-panel { padding: 25px 14px 45px; }
+  .auth-card { padding: 20px; }
   .site-header { height: 64px; padding: 0 16px; }
-  .header-actions .icon-button, .header-actions .avatar, .cart-button span { display: none; }
+  .header-actions .icon-button, .cart-button span { display: none; }
   .cart-button { width: 40px; padding: 0; justify-content: center; position: relative; }
   .cart-button b { position: absolute; right: -5px; top: -5px; }
   .hero { padding: 44px 20px 62px; min-height: auto; gap: 48px; }

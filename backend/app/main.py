@@ -9,11 +9,30 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+# Import registers authentication tables on the shared SQLAlchemy metadata.
+from . import auth_models as _auth_models  # noqa: F401
 from .agent_contracts import build_agent_catalog, build_agent_policy, payload_etag
 from .agent_models import AgentSession
 from .agent_schemas import AgentAuditResponse, AgentRunRequest, AgentRunResponse
 from .agent_service import AgentConfig, load_agent_session, run_agent
 from .audit import AuditVerificationResponse, verify_audit
+from .auth_schemas import (
+    AuthResponse,
+    CustomerResponse,
+    LoginRequest,
+    LogoutResponse,
+    SignupRequest,
+)
+from .auth_service import (
+    SESSION_COOKIE,
+    AuthError,
+    authenticate_customer,
+    create_customer,
+    create_session,
+    delete_session,
+    load_customer_from_token,
+    secure_cookie_enabled,
+)
 from .catalog import seed_catalog
 from .commerce import CommerceError, approve_cart, create_cart, create_order, freeze_cart, load_cart
 from .commerce_models import Order
@@ -104,7 +123,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[frontend_origin],
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["content-type"],
     )
@@ -139,6 +158,65 @@ def create_app(
             status_code=error.status_code,
             content={"error": error.code, "message": error.message},
         )
+
+    @app.exception_handler(AuthError)
+    async def auth_error_handler(_: Request, error: AuthError) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"error": error.code, "message": error.message},
+        )
+
+    def auth_payload(customer) -> AuthResponse:
+        return AuthResponse(
+            user=CustomerResponse(
+                id=customer.id,
+                name=customer.name,
+                email=customer.email,
+                created_at=customer.created_at,
+            )
+        )
+
+    def attach_session_cookie(response: Response, token: str, expires_at) -> None:
+        response.set_cookie(
+            key=SESSION_COOKIE,
+            value=token,
+            expires=expires_at,
+            httponly=True,
+            secure=secure_cookie_enabled(),
+            samesite="lax",
+            path="/",
+        )
+
+    @app.post("/api/auth/signup", response_model=AuthResponse, status_code=201, tags=["auth"])
+    def signup(payload: SignupRequest, response: Response, session: SessionDependency):
+        customer = create_customer(session, payload.name, payload.email, payload.password)
+        token, expires_at = create_session(session, customer)
+        attach_session_cookie(response, token, expires_at)
+        return auth_payload(customer)
+
+    @app.post("/api/auth/login", response_model=AuthResponse, tags=["auth"])
+    def login(payload: LoginRequest, response: Response, session: SessionDependency):
+        customer = authenticate_customer(session, payload.email, payload.password)
+        token, expires_at = create_session(session, customer)
+        attach_session_cookie(response, token, expires_at)
+        return auth_payload(customer)
+
+    @app.get("/api/auth/me", response_model=AuthResponse, tags=["auth"])
+    def current_customer(request: Request, session: SessionDependency):
+        customer = load_customer_from_token(session, request.cookies.get(SESSION_COOKIE))
+        return auth_payload(customer)
+
+    @app.post("/api/auth/logout", response_model=LogoutResponse, tags=["auth"])
+    def logout(request: Request, response: Response, session: SessionDependency):
+        delete_session(session, request.cookies.get(SESSION_COOKIE))
+        response.delete_cookie(
+            SESSION_COOKIE,
+            path="/",
+            httponly=True,
+            secure=secure_cookie_enabled(),
+            samesite="lax",
+        )
+        return LogoutResponse()
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     def health() -> HealthResponse:
