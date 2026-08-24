@@ -41,6 +41,8 @@ class AgentRunResponse(BaseModel):
     audio_mime_type: str | None = None
     localization_status: Literal["original", "localized", "unavailable"] = "original"
     voice_status: Literal["not_requested", "ready", "unavailable"] = "not_requested"
+    policy_decision: Literal["allow", "deny", "escalate"] | None = None
+    policy_rule_id: str | None = None
 
 
 class AgentAuditResponse(BaseModel):

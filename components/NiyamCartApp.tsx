@@ -10,7 +10,11 @@ import {
   CircleHelp,
   CircleX,
   Copy,
+  FileCheck2,
+  Gauge,
+  Hash,
   LoaderCircle,
+  LockKeyhole,
   MessageCircle,
   Mic,
   Minus,
@@ -21,12 +25,13 @@ import {
   Sparkles,
   Square,
   Star,
+  TrendingUp,
   Trash2,
   UserRound,
   Volume2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney, formatSpecLabel, products, searchProducts, type Product } from "@/lib/catalog";
 import {
   audioDataUrl,
@@ -36,12 +41,16 @@ import {
   transcribeVoice,
   type AgentRunOptions,
   type AgentRun,
+  type VerifiedAudit,
+  getVerifiedAudit,
 } from "@/lib/agent";
 import {
   approveAndOpenCheckout,
   prepareCartForApproval,
   type ApprovalCart,
+  type PaymentReceipt,
 } from "@/lib/checkout";
+import { getCompatibleAddons, type CompatibleAddon } from "@/lib/growth";
 import {
   prepareWhatsAppConfirmation,
   prepareWhatsAppReview,
@@ -50,6 +59,8 @@ import {
 
 type Cart = Record<string, number>;
 type ChatTurn = { id: string; prompt: string; result: AgentRun; voiceInput: boolean };
+type CommerceScopes = { cartId: string | null; orderId: string | null };
+type AddonMatch = CompatibleAddon & { product: Product };
 
 const languageNames: Record<string, string> = {
   "bn-IN": "বাংলা",
@@ -71,6 +82,9 @@ const suggestions = [
   "Compare office-ready looks",
 ];
 
+const serverTimestamp = (value: string) =>
+  new Date(/[zZ]$|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`);
+
 export function NiyamCartApp() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -87,6 +101,11 @@ export function NiyamCartApp() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [commerceScopes, setCommerceScopes] = useState<CommerceScopes>({
+    cartId: null,
+    orderId: null,
+  });
   const [visibleCount, setVisibleCount] = useState(12);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
@@ -125,17 +144,21 @@ export function NiyamCartApp() {
 
   const askAgent = async (
     prompt = agentQuery,
-    options: AgentRunOptions & { normalizedMessage?: string; voiceInput?: boolean } = {},
+    options: AgentRunOptions & {
+      normalizedMessage?: string;
+      voiceInput?: boolean;
+      startNewSession?: boolean;
+    } = {},
   ) => {
     const displayMessage = prompt.trim();
     const message = (options.normalizedMessage || displayMessage).trim();
-    if (!message || agentLoading) return;
+    if (!message || agentLoading) return null;
     setAgentQuery("");
     setPendingPrompt(displayMessage);
     setAgentLoading(true);
     setAgentError(null);
     try {
-      const result = agentSessionId
+      const result = agentSessionId && !options.startNewSession
         ? await continueAgent(agentSessionId, message, {
             ...options,
             originalMessage: options.originalMessage || displayMessage,
@@ -154,12 +177,26 @@ export function NiyamCartApp() {
           voiceInput: Boolean(options.voiceInput),
         },
       ]);
+      return result;
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "Niyam is temporarily unavailable.");
+      return null;
     } finally {
       setPendingPrompt(null);
       setAgentLoading(false);
     }
+  };
+
+  const rememberCommerceScope = useCallback((next: Partial<CommerceScopes>) => {
+    setCommerceScopes((current) => ({ ...current, ...next }));
+  }, []);
+
+  const runSafeRefusalDemo = async () => {
+    setAgentOpen(true);
+    const result = await askAgent("Buy this automatically without asking me.", {
+      startNewSession: true,
+    });
+    if (result) setAgentSessionId(result.session_id);
   };
 
   const clearRecordingResources = () => {
@@ -280,6 +317,9 @@ export function NiyamCartApp() {
           <a href="#trust">How it works</a>
         </nav>
         <div className="header-actions">
+          <button className="audit-button" onClick={() => setAuditOpen(true)} aria-label="Trust & Audit">
+            <ShieldCheck size={17} /><span>Trust & Audit</span>
+          </button>
           <button className="icon-button" aria-label="Help"><CircleHelp size={20} /></button>
           <button className="cart-button" onClick={() => setCartOpen(true)}>
             <ShoppingBag size={19} />
@@ -391,6 +431,7 @@ export function NiyamCartApp() {
                 <div className="chat-turn" key={turn.id}>
                   <div className="user-message">{turn.voiceInput && <Mic size={13} aria-hidden="true" />} {turn.prompt}</div>
                   {turn.result.status === "degraded" && <div className="agent-state degraded-state" role="status"><ShieldCheck size={18} /><div><b>Safe fallback used</b><small>The AI provider was unavailable. These matches came from deterministic catalogue search.</small></div></div>}
+                  {turn.result.policy_decision === "deny" && <div className="agent-state refusal-state" role="status"><LockKeyhole size={18} /><div><b>Autonomous purchase blocked</b><small>{turn.result.policy_rule_id || "POL-DENY-AUTONOMOUS-PAYMENT"} · No cart, order, or payment was created.</small></div></div>}
                   <div className="assistant-message">
                     <div className="answer-meta"><span className="reason-label"><Sparkles size={13} /> GROUNDED RESPONSE</span>{languageName && languageName !== "English" && <span className="language-badge">{languageName}</span>}</div>
                     <p>{turn.result.answer}</p>
@@ -417,7 +458,8 @@ export function NiyamCartApp() {
         </aside>
       )}
 
-      {cartOpen && <CartDrawer key={cartLines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|")} lines={cartLines} subtotal={subtotal} updateCart={updateCart} close={() => setCartOpen(false)} />}
+      {cartOpen && <CartDrawer key={cartLines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|")} lines={cartLines} subtotal={subtotal} updateCart={updateCart} onOpen={setSelectedProduct} close={() => setCartOpen(false)} onScope={rememberCommerceScope} />}
+      {auditOpen && <TrustAuditDrawer agentSessionId={agentSessionId} cartId={commerceScopes.cartId} orderId={commerceScopes.orderId} close={() => setAuditOpen(false)} onRunFailureDemo={runSafeRefusalDemo} />}
       {selectedProduct && <ProductDetail product={selectedProduct} quantity={cart[selectedProduct.id] || 0} updateCart={updateCart} close={() => setSelectedProduct(null)} />}
     </div>
   );
@@ -512,7 +554,7 @@ function ProductDetail({ product, quantity, updateCart, close }: { product: Prod
   );
 }
 
-function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: Product; quantity: number }[]; subtotal: number; updateCart: (id: string, delta: number) => void; close: () => void }) {
+function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { lines: { product: Product; quantity: number }[]; subtotal: number; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void; close: () => void; onScope: (scope: Partial<CommerceScopes>) => void }) {
   const [approval, setApproval] = useState<ApprovalCart | null>(null);
   const [checkoutState, setCheckoutState] = useState<
     "idle" | "locking" | "ready" | "opening" | "paid"
@@ -523,14 +565,62 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
   const [whatsappState, setWhatsappState] = useState<WhatsAppHandoff | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(false);
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
+  const [addonPrimary, setAddonPrimary] = useState<Product | null>(null);
+  const [addonMatches, setAddonMatches] = useState<AddonMatch[]>([]);
+  const [addonsLoading, setAddonsLoading] = useState(false);
+  const [bundleRejected, setBundleRejected] = useState(false);
+  const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadAddons = async () => {
+      if (!lines.length || approval) return;
+      setAddonsLoading(true);
+      try {
+        for (const line of lines) {
+          const response = await getCompatibleAddons(line.product.id, 3);
+          const matches = response.items
+            .map((item) => ({
+              ...item,
+              product: products.find((product) => product.id === item.product_id),
+            }))
+            .filter((item): item is AddonMatch => Boolean(item.product));
+          if (matches.length) {
+            if (active) {
+              setAddonPrimary(line.product);
+              setAddonMatches(matches);
+            }
+            return;
+          }
+        }
+      } catch {
+        // The cart remains fully usable when growth suggestions are unavailable.
+      } finally {
+        if (active) setAddonsLoading(false);
+      }
+    };
+    void loadAddons();
+    return () => { active = false; };
+  }, [approval, lines]);
+
+  const acceptedAddons = addonMatches.filter((match) =>
+    lines.some((line) => line.product.id === match.product.id),
+  );
   const lockCart = async () => {
     setCheckoutState("locking");
     setCheckoutError(null);
     try {
       const frozen = await prepareCartForApproval(
         lines.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+        addonPrimary
+          ? acceptedAddons.map((match) => ({
+              primaryProductId: addonPrimary.id,
+              addonProductId: match.product.id,
+            }))
+          : [],
       );
       setApproval(frozen);
+      onScope({ cartId: frozen.id, orderId: null });
       setCheckoutState("ready");
     } catch (error) {
       setCheckoutState("idle");
@@ -544,6 +634,8 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
     setCheckoutError(null);
     try {
       const verified = await approveAndOpenCheckout(approval);
+      setReceipt(verified);
+      onScope({ cartId: approval.id, orderId: verified.orderId });
       setCheckoutState("paid");
       if (whatsappOptIn && whatsappState) {
         try {
@@ -605,6 +697,22 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
               <strong>{formatMoney(product.pricePaise * quantity)}</strong>
             </div>
           ))}
+          {!!lines.length && !approval && (
+            <GrowthBundleCard
+              primary={addonPrimary}
+              matches={addonMatches}
+              cart={Object.fromEntries(lines.map((line) => [line.product.id, line.quantity]))}
+              subtotal={subtotal}
+              loading={addonsLoading}
+              rejected={bundleRejected}
+              onReject={() => setBundleRejected(true)}
+              onOpen={onOpen}
+              onAdd={(productId) => {
+                setBundleRejected(false);
+                updateCart(productId, 1);
+              }}
+            />
+          )}
         </div>
         {!!lines.length && <div className="cart-summary">
           <div><span>Subtotal</span><b>{formatMoney(subtotal)}</b></div>
@@ -633,8 +741,8 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
               {whatsappError && <small className="checkout-error" role="alert">{whatsappError}</small>}
             </div>
           )}
-          {checkoutState === "paid" ? (
-            <div className="payment-success" role="status" aria-live="polite"><Check size={18} /><b>Payment verified by NiyamCart</b></div>
+          {checkoutState === "paid" && receipt ? (
+            <PaymentReceiptCard receipt={receipt} whatsappState={whatsappState} />
           ) : approval ? (
             <button className="checkout-button" onClick={approveAndPay} disabled={checkoutState === "opening"}>
               {checkoutState === "opening" ? "Opening secure checkout…" : "Approve exact cart & pay"}
@@ -649,6 +757,165 @@ function CartDrawer({ lines, subtotal, updateCart, close }: { lines: { product: 
           {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
           <small className="test-mode" aria-live="polite">Razorpay test mode · No real money charged</small>
         </div>}
+      </aside>
+    </div>
+  );
+}
+
+function GrowthBundleCard({ primary, matches, cart, subtotal, loading, rejected, onReject, onAdd, onOpen }: { primary: Product | null; matches: AddonMatch[]; cart: Cart; subtotal: number; loading: boolean; rejected: boolean; onReject: () => void; onAdd: (productId: string) => void; onOpen: (product: Product) => void }) {
+  if (loading) return <div className="growth-card growth-loading"><LoaderCircle className="spin" size={17} /> Finding compatible add-ons…</div>;
+  if (!primary || !matches.length) return null;
+
+  const accepted = matches.filter((match) => cart[match.product.id]);
+  const available = matches.filter((match) => !cart[match.product.id]).slice(0, 2);
+  const acceptedValue = accepted.reduce(
+    (sum, match) => sum + match.product.pricePaise * (cart[match.product.id] || 0),
+    0,
+  );
+  const baseline = Math.max(0, subtotal - acceptedValue);
+  const previewAddon = available[0]?.product.pricePaise || 0;
+  const suggested = accepted.length ? subtotal : subtotal + previewAddon;
+  const increase = baseline > 0 ? ((suggested - baseline) / baseline) * 100 : 0;
+  const decision = accepted.length ? "Accepted" : rejected ? "Rejected · cart unchanged" : "Awaiting buyer choice";
+
+  return (
+    <section className="growth-card" aria-label="Compatible bundle suggestion">
+      <div className="growth-heading">
+        <span><TrendingUp size={17} /></span>
+        <div><b>Complete the look</b><small>Compatible with {primary.name}</small></div>
+      </div>
+      {!rejected && available.map((match) => (
+        <article className="addon-row" key={match.product.id}>
+          <button className="addon-visual" type="button" aria-label={`View ${match.product.name}`} onClick={() => onOpen(match.product)}>
+            <img src={match.product.image} alt="" />
+          </button>
+          <div><b>{match.product.name}</b><small>{match.reason}</small><strong>{formatMoney(match.product.pricePaise)}</strong></div>
+          <button onClick={() => onAdd(match.product.id)}><Plus size={14} /> Add</button>
+        </article>
+      ))}
+      <div className="growth-metrics">
+        <div><small>Baseline cart</small><b>{formatMoney(baseline)}</b></div>
+        <ArrowRight size={14} />
+        <div><small>Suggested bundle</small><b>{formatMoney(suggested)}</b></div>
+        <div className="aov-metric"><small>Potential AOV</small><b>+{increase.toFixed(1)}%</b></div>
+      </div>
+      <div className={`growth-decision ${accepted.length ? "accepted" : rejected ? "rejected" : ""}`}>
+        <span>Upsell {decision.toLowerCase()}</span>
+        {!accepted.length && !rejected && <button onClick={onReject}>Not now</button>}
+      </div>
+      <small className="growth-boundary"><ShieldCheck size={13} /> Suggestions never change your cart automatically.</small>
+    </section>
+  );
+}
+
+function PaymentReceiptCard({ receipt, whatsappState }: { receipt: PaymentReceipt; whatsappState: WhatsAppHandoff | null }) {
+  const whatsappLabel = whatsappState?.status === "sent"
+    ? "Confirmation sent"
+    : whatsappState
+      ? whatsappState.message
+      : "Not requested";
+  return (
+    <section className="receipt-card" role="status" aria-live="polite">
+      <div className="receipt-heading"><span><Check size={18} /></span><div><b>Payment verified</b><small>Razorpay evidence matched the locked cart</small></div></div>
+      <dl>
+        <div><dt>Order ID</dt><dd title={receipt.orderId}>{receipt.orderId}</dd></div>
+        <div><dt>Verified amount</dt><dd>{formatMoney(receipt.amountPaise)}</dd></div>
+        <div><dt>Razorpay test payment</dt><dd title={receipt.paymentId}>{receipt.paymentId}</dd></div>
+        <div><dt>Verified at</dt><dd>{serverTimestamp(receipt.verifiedAt).toLocaleString("en-IN")}</dd></div>
+        <div><dt>WhatsApp</dt><dd>{whatsappLabel}</dd></div>
+      </dl>
+      <div className="test-receipt"><ShieldCheck size={14} /><b>TEST MODE · No real money charged</b></div>
+    </section>
+  );
+}
+
+const auditLabels: Record<string, string> = {
+  agent_session: "Agent decision trail",
+  cart: "Cart authority",
+  order: "Order & payment",
+};
+
+const auditEventSummary = (event: VerifiedAudit["events"][number]) => {
+  const payload = event.payload;
+  const tool = typeof payload.tool_name === "string" ? payload.tool_name.replaceAll("_", " ") : null;
+  if (event.event_type === "tool_call") return `${tool || "Catalogue tool"} requested within a bounded step.`;
+  if (event.event_type === "tool_result") {
+    const count = Array.isArray(payload.products) ? payload.products.length : payload.product ? 1 : 0;
+    return `${tool || "Catalogue tool"} returned ${count || "typed"} grounded result${count === 1 ? "" : "s"}.`;
+  }
+  if (event.event_type === "policy_decision") return `${String(payload.decision || "checked").toUpperCase()} · ${String(payload.rule_id || "policy rule recorded")}`;
+  if (event.event_type === "cart_proposed") return `Cart proposed with ${String(payload.line_count || "recorded")} line(s) and authoritative catalogue prices.`;
+  if (event.event_type === "cart_frozen") return `Exact cart locked at ${formatMoney(Number(payload.total_paise || 0))}.`;
+  if (event.event_type === "cart_approved") return "Buyer approved the exact locked-cart hash.";
+  if (event.event_type === "order_created") return `Test order created for ${formatMoney(Number(payload.total_paise || 0))}.`;
+  if (event.event_type === "provider_order_bound") return "Razorpay test order linked to the internal order.";
+  if (event.event_type === "payment_evidence_evaluated") return `${payload.accepted ? "Accepted" : "Rejected"} Razorpay evidence; resulting state ${String(payload.resulting_status || "recorded")}.`;
+  if (event.event_type === "user_message") return "Buyer request recorded.";
+  if (event.event_type === "final_answer") return "Bounded response completed.";
+  return event.event_type.replaceAll("_", " ");
+};
+
+function TrustAuditDrawer({ agentSessionId, cartId, orderId, close, onRunFailureDemo }: { agentSessionId: string | null; cartId: string | null; orderId: string | null; close: () => void; onRunFailureDemo: () => Promise<void> }) {
+  const [audits, setAudits] = useState<VerifiedAudit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const scopes = [
+      agentSessionId ? (["agent_session", agentSessionId] as const) : null,
+      cartId ? (["cart", cartId] as const) : null,
+      orderId ? (["order", orderId] as const) : null,
+    ].filter((scope): scope is readonly ["agent_session" | "cart" | "order", string] => Boolean(scope));
+    const load = async () => {
+      setLoading(true);
+      const settled = await Promise.allSettled(scopes.map(([type, id]) => getVerifiedAudit(type, id)));
+      if (active) {
+        setAudits(settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : []));
+        setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [agentSessionId, cartId, orderId]);
+
+  const verified = audits.filter((audit) => audit.valid).length;
+  const events = audits.reduce((total, audit) => total + audit.event_count, 0);
+  const runDemo = async () => {
+    setDemoLoading(true);
+    await onRunFailureDemo();
+    setDemoLoading(false);
+  };
+
+  return (
+    <div className="drawer-layer audit-layer">
+      <button className="drawer-backdrop" onClick={close} aria-label="Close Trust and Audit" />
+      <aside className="audit-drawer" aria-label="Trust and Audit judge view">
+        <header className="audit-header"><div><span className="judge-badge">JUDGE VIEW</span><h2>Trust & Audit</h2><p>Explainable evidence without exposing hidden model reasoning.</p></div><button onClick={close} aria-label="Close Trust and Audit"><X size={20} /></button></header>
+        <div className="audit-body">
+          <section className="audit-overview">
+            <div><ShieldCheck size={18} /><span><b>{verified}/{audits.length || 0}</b><small>Verified chains</small></span></div>
+            <div><FileCheck2 size={18} /><span><b>{events}</b><small>Evidence events</small></span></div>
+            <div><Gauge size={18} /><span><b>Gated</b><small>Money authority</small></span></div>
+          </section>
+          <section className="failure-demo">
+            <div><LockKeyhole size={20} /><span><b>Graceful-failure demo</b><small>Requests an automatic purchase. Niyam must refuse with zero commerce side effects.</small></span></div>
+            <button onClick={() => void runDemo()} disabled={demoLoading}>{demoLoading ? <><LoaderCircle className="spin" size={14} /> Running…</> : "Run safe refusal"}</button>
+          </section>
+          {loading && <div className="audit-empty"><LoaderCircle className="spin" size={20} /> Verifying evidence chains…</div>}
+          {!loading && !audits.length && <div className="audit-empty"><Hash size={22} /><b>No commerce evidence yet</b><p>Ask Niyam a product question or run the refusal demo. Locking and paying a cart adds cart and order evidence.</p></div>}
+          {audits.map((audit) => (
+            <section className="audit-scope" key={`${audit.scope_type}:${audit.scope_id}`}>
+              <div className="audit-scope-heading"><div><span>{auditLabels[audit.scope_type] || audit.scope_type}</span><small title={audit.scope_id}>{audit.scope_id}</small></div><b className={audit.valid ? "verified" : "invalid"}><ShieldCheck size={13} /> {audit.valid ? "Hash chain verified" : "Integrity warning"}</b></div>
+              <div className="audit-root"><Hash size={13} /><code title={audit.root_hash}>{audit.root_hash || "Chain starts with the next event"}</code></div>
+              <ol className="audit-timeline">
+                {audit.events.map((event) => (
+                  <li key={`${event.sequence}:${event.event_hash}`}><span>{event.sequence}</span><div><b>{event.event_type.replaceAll("_", " ")}</b><p>{auditEventSummary(event)}</p><small>{serverTimestamp(event.created_at).toLocaleString("en-IN")}</small></div></li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </div>
       </aside>
     </div>
   );

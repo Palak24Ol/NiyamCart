@@ -106,6 +106,11 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 - [x] Add audit verification endpoint.
 - [x] Redact secrets and sensitive values.
 - [x] Add accessible loading, error, and degraded states.
+- [x] Show compatible cross-sells with reasons and explicit add controls.
+- [x] Show baseline cart, suggested bundle, AOV uplift, and acceptance/rejection.
+- [x] Keep judge-facing audit evidence on a separate Trust & Audit surface.
+- [x] Add a repeatable zero-side-effect autonomous-payment refusal demo.
+- [x] Show an evidence-backed post-payment test receipt.
 
 ## Phase 8 - Evaluation and reliability
 
@@ -151,7 +156,7 @@ This is the operational tracker. A phase is not complete until every exit-gate i
 
 ## Final acceptance checklist
 
-- [ ] One natural-language buyer request reaches one verified Razorpay test payment.
+- [x] One natural-language buyer request reaches one verified Razorpay test payment.
 - [x] The agent selects tools dynamically and reacts to typed results.
 - [x] The agent cannot cause a financial side effect.
 - [x] Every rupee is represented as integer paise.

@@ -14,6 +14,8 @@ export type AgentRun = {
   audio_mime_type: string | null;
   localization_status: "original" | "localized" | "unavailable";
   voice_status: "not_requested" | "ready" | "unavailable";
+  policy_decision: "allow" | "deny" | "escalate" | null;
+  policy_rule_id: string | null;
 };
 
 export type AgentRunOptions = {
@@ -140,8 +142,10 @@ export const audioDataUrl = (run: AgentRun) =>
 export const getAgentAudit = (sessionId: string) =>
   api<AgentAudit>(`/api/agent/sessions/${sessionId}/events`);
 
-export const getVerifiedAudit = (sessionId: string) =>
-  api<VerifiedAudit>(`/api/audit/agent_session/${sessionId}`);
+export const getVerifiedAudit = (
+  scopeType: "agent_session" | "cart" | "order",
+  scopeId: string,
+) => api<VerifiedAudit>(`/api/audit/${scopeType}/${scopeId}`);
 
 export const getProposedCart = (cartId: string) =>
   api<ProposedCart>(`/api/carts/${cartId}`);

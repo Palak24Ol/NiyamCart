@@ -392,6 +392,9 @@ def verify_checkout_payment(
             payment_status="verified",
             razorpay_payment_id=request.razorpay_payment_id,
             duplicate=True,
+            amount_paise=order.total_paise,
+            currency=order.currency,
+            verified_at=order.paid_at,
         )
     reconciled_order, event = _reconcile_fetched_payment(
         db,
@@ -413,6 +416,9 @@ def verify_checkout_payment(
         payment_status="verified",
         razorpay_payment_id=request.razorpay_payment_id,
         duplicate=False,
+        amount_paise=reconciled_order.total_paise,
+        currency=reconciled_order.currency,
+        verified_at=reconciled_order.paid_at,
     )
 
 

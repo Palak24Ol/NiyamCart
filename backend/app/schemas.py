@@ -36,3 +36,15 @@ class ProductResponse(BaseModel):
 class ProductListResponse(BaseModel):
     items: list[ProductResponse]
     count: int = Field(ge=0)
+
+
+class CompatibleAddonItem(BaseModel):
+    product_id: str
+    rule_id: str
+    reason: str
+
+
+class CompatibleAddonListResponse(BaseModel):
+    primary_product_id: str
+    items: list[CompatibleAddonItem]
+    count: int = Field(ge=0)

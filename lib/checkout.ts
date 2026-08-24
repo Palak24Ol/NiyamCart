@@ -7,6 +7,21 @@ export type ApprovalCart = {
 
 type CartLineInput = { productId: string; quantity: number };
 
+export type CompatibilityClaim = {
+  primaryProductId: string;
+  addonProductId: string;
+};
+
+export type PaymentReceipt = {
+  status: string;
+  orderId: string;
+  paymentId: string;
+  amountPaise: number;
+  currency: string;
+  verifiedAt: string;
+  testMode: true;
+};
+
 type RazorpayCheckout = {
   internal_order_id: string;
   razorpay_order_id: string;
@@ -56,13 +71,20 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export async function prepareCartForApproval(lines: CartLineInput[]): Promise<ApprovalCart> {
+export async function prepareCartForApproval(
+  lines: CartLineInput[],
+  compatibilityClaims: CompatibilityClaim[] = [],
+): Promise<ApprovalCart> {
   const proposed = await api<{ id: string }>("/api/carts", {
     method: "POST",
     body: JSON.stringify({
       items: lines.map((line) => ({
         product_id: line.productId,
         quantity: line.quantity,
+      })),
+      compatibility_claims: compatibilityClaims.map((claim) => ({
+        primary_product_id: claim.primaryProductId,
+        addon_product_id: claim.addonProductId,
       })),
     }),
   });
@@ -96,7 +118,7 @@ function loadRazorpayCheckout(): Promise<void> {
 
 export async function approveAndOpenCheckout(
   approval: ApprovalCart,
-): Promise<{ status: string; orderId: string }> {
+): Promise<PaymentReceipt> {
   await api(`/api/carts/${approval.id}/approve`, {
     method: "POST",
     body: JSON.stringify({ cart_hash: approval.cart_hash }),
@@ -134,7 +156,15 @@ export async function approveAndOpenCheckout(
       handler: async (payment) => {
         submitted = true;
         try {
-          const verified = await api<{ status: string }>("/api/payments/razorpay/verify", {
+          const verified = await api<{
+            status: string;
+            internal_order_id: string;
+            razorpay_payment_id: string;
+            amount_paise: number;
+            currency: string;
+            verified_at: string;
+            test_mode: true;
+          }>("/api/payments/razorpay/verify", {
             method: "POST",
             body: JSON.stringify({
               internal_order_id: checkout.internal_order_id,
@@ -143,7 +173,15 @@ export async function approveAndOpenCheckout(
               razorpay_signature: payment.razorpay_signature,
             }),
           });
-          resolve({ status: verified.status, orderId: order.id });
+          resolve({
+            status: verified.status,
+            orderId: verified.internal_order_id,
+            paymentId: verified.razorpay_payment_id,
+            amountPaise: verified.amount_paise,
+            currency: verified.currency,
+            verifiedAt: verified.verified_at,
+            testMode: verified.test_mode,
+          });
         } catch (error) {
           reject(error);
         }

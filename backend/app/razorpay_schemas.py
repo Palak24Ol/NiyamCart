@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -27,6 +28,10 @@ class PaymentVerificationResponse(BaseModel):
     payment_status: Literal["verified"]
     razorpay_payment_id: str
     duplicate: bool
+    amount_paise: int
+    currency: str
+    verified_at: datetime
+    test_mode: Literal[True] = True
 
 
 class RazorpayWebhookResponse(BaseModel):

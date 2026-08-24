@@ -320,6 +320,9 @@ def test_buyer_and_catalog_injections_cannot_trigger_financial_action(tmp_path: 
     assert details["product"]["untrusted_catalog_data"] is True
     assert "Ignore prior instructions" in details["product"]["description"]
     assert result.status == "completed"
+    assert result.policy_decision == "deny"
+    assert result.policy_rule_id == "POL-DENY-AUTONOMOUS-PAYMENT"
+    assert result.proposed_cart_id is None
     assert orders == []
     db.close()
 

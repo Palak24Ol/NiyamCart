@@ -166,6 +166,12 @@ def test_checkout_callback_fetches_and_reconciles_captured_payment(tmp_path: Pat
     assert first.status_code == 200
     assert first.json()["payment_status"] == "verified"
     assert first.json()["duplicate"] is False
+    assert first.json()["internal_order_id"] == order["id"]
+    assert first.json()["razorpay_payment_id"] == payment_id
+    assert first.json()["amount_paise"] == order["total_paise"]
+    assert first.json()["currency"] == "INR"
+    assert first.json()["verified_at"]
+    assert first.json()["test_mode"] is True
     assert duplicate.status_code == 200
     assert duplicate.json()["duplicate"] is True
     assert gateway.fetch_count == 1

@@ -33,6 +33,8 @@ The clean frontend/backend foundation is implemented with:
 - Integer-paise product data and Indian currency formatting.
 - Interactive cart with quantities and totals.
 - Live Niyam assistant panel with explained, catalogue-grounded recommendations.
+- Buyer-gated “Complete the look” cross-sells with compatibility reasons and explicit add controls.
+- Visible baseline/suggested totals, potential AOV uplift, and accepted/rejected upsell evidence.
 - Proposed-cart handoff and a visible human-approval boundary.
 - Responsive desktop and mobile layouts.
 - FastAPI health and catalogue endpoints backed by SQLAlchemy.
@@ -47,14 +49,16 @@ The clean frontend/backend foundation is implemented with:
 - Standard Checkout with a separate human approval action and server-side signature verification.
 - Callback and raw-body-verified webhook reconciliation through one payment finaliser.
 - Bounded Groq/OpenAI tool loop with six strict merchant tools.
-- Redacted, hash-chained audit events with server-side tamper verification.
+- Separate judge-facing Trust & Audit drawer with redacted, hash-chained agent, cart, and order evidence.
+- One-click autonomous-payment refusal demo with the exact policy rule and zero commerce side effects.
+- Post-payment receipt with order, amount, Razorpay test-payment, timestamp, and WhatsApp state.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
-- 69 automated tests spanning unit, integration, randomized properties, reliability, and races.
+- 90 automated tests spanning unit, integration, randomized properties, reliability, and races.
 
-The frontend calls the bounded agent API directly. It shows typed tool activity, grounded product
-evidence, policy rule IDs, safe degraded states, and audit verification without exposing hidden
-model reasoning.
+The frontend calls the bounded agent API directly. Shopper chat shows grounded products, policy
+refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and
+hash-chain verification for judges without exposing hidden model reasoning.
 
 ## Run locally
 

@@ -24,6 +24,7 @@ from .commerce_schemas import (
     CreateOrderRequest,
     OrderResponse,
 )
+from .compatibility import compatible_addon_ids
 from .database import Database
 from .models import Product
 from .policy import PolicyDecision, PolicyEvaluationRequest, evaluate_policy
@@ -42,7 +43,13 @@ from .razorpay_service import (
     verify_checkout_payment,
 )
 from .sarvam_service import PreparedText, SarvamError, SarvamProvider, configured_sarvam
-from .schemas import HealthResponse, ProductListResponse, ProductResponse
+from .schemas import (
+    CompatibleAddonItem,
+    CompatibleAddonListResponse,
+    HealthResponse,
+    ProductListResponse,
+    ProductResponse,
+)
 from .voice_schemas import (
     SpeechSynthesisRequest,
     SpeechSynthesisResponse,
@@ -163,6 +170,44 @@ def create_app(
         if product is None:
             raise HTTPException(status_code=404, detail="Product not found")
         return product
+
+    @app.get(
+        "/api/products/{product_id}/compatible-addons",
+        response_model=CompatibleAddonListResponse,
+        tags=["catalog"],
+    )
+    def compatible_addons_route(
+        product_id: str,
+        session: SessionDependency,
+        limit: int = Query(default=3, ge=1, le=5),
+    ) -> CompatibleAddonListResponse:
+        product = session.get(Product, product_id)
+        if product is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+        addon_ids = compatible_addon_ids(session, product)[:limit]
+        addons = [session.get(Product, addon_id) for addon_id in addon_ids]
+        items = []
+        for addon in addons:
+            if addon is None:
+                continue
+            if addon.category == "Jewellery & Accessories":
+                reason = "Coordinates with the selected look using the merchant compatibility map."
+            elif addon.category == "Bags & Footwear":
+                reason = "Completes the look without changing the selected product or its fit."
+            else:
+                reason = "A merchant-defined complement for the selected product category."
+            items.append(
+                CompatibleAddonItem(
+                    product_id=addon.id,
+                    rule_id="COMPAT-DETERMINISTIC-COMPLEMENT-V1",
+                    reason=reason,
+                )
+            )
+        return CompatibleAddonListResponse(
+            primary_product_id=product.id,
+            items=items,
+            count=len(items),
+        )
 
     @app.post("/api/carts", response_model=CartResponse, status_code=201, tags=["commerce"])
     def create_cart_route(request: CreateCartRequest, session: SessionDependency):

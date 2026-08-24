@@ -36,3 +36,18 @@ def test_catalog_filter_and_product_not_found(tmp_path: Path) -> None:
     assert filtered.json()["count"] == 50
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Product not found"
+
+
+def test_compatible_addons_are_visible_and_grounded(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.get("/api/products/P-001/compatible-addons", params={"limit": 3})
+        missing = client.get("/api/products/does-not-exist/compatible-addons")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["primary_product_id"] == "P-001"
+    assert payload["count"] == len(payload["items"])
+    assert payload["count"] > 0
+    assert all(item["rule_id"] == "COMPAT-DETERMINISTIC-COMPLEMENT-V1" for item in payload["items"])
+    assert all(item["reason"] for item in payload["items"])
+    assert missing.status_code == 404

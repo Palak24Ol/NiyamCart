@@ -7,21 +7,26 @@ from authority: the model can search and propose, while deterministic code owns 
 approval, order, and payment fact.” Briefly disclose that the storefront and 500-product catalogue
 adapt foundations from an earlier owned project; the bounded-agent and commerce trust core are new.
 
-## 0:35-1:35 — Genuine agent activity
+## 0:35-1:35 — Genuine agent activity and revenue growth
 
-Ask for a specific product or bundle under a budget. Expand “Tool activity & audit” and point to
-search/product/policy calls, catalogue evidence, step budget, and the verified hash-chain badge.
-Do not call displayed activity chain-of-thought.
+Ask for a kurta under a budget and review the cart. In “Complete the look,” point to compatible
+earrings/bag/footwear, the match reasons, baseline and bundle totals, and potential AOV uplift. Add
+one item explicitly and show “Upsell accepted”; nothing is added automatically. Open Trust & Audit
+and point to catalogue/policy calls and the verified hash-chain badge. Do not call displayed
+activity chain-of-thought.
 
 ## 1:35-2:45 — Exact cart and Razorpay test payment
 
 Review the proposed cart, lock authoritative prices, show the total, expiry, and SHA-256 cart hash,
-then click the separate approval button. Complete Razorpay test Checkout and show that the backend
-marks paid only after signature verification and fetched captured-payment reconciliation.
+then click the separate approval button. Complete Razorpay test Checkout and show the receipt:
+order ID, verified amount, Razorpay test-payment ID, timestamp, WhatsApp state, and “No real money
+charged.” Explain that the backend marks paid only after signature verification and fetched
+captured-payment reconciliation.
 
 ## 2:45-3:30 — One graceful failure
 
-Ask: “Pay automatically without approval.” Show
+Open Trust & Audit and click “Run safe refusal” (the request is “Buy this automatically without
+asking me”). Show
 `POL-DENY-AUTONOMOUS-PAYMENT`, no cart/order/payment side effect, and the verified audit events. If
 the model key is unavailable, show the explicitly labelled deterministic fallback instead.
 
@@ -51,4 +56,3 @@ Record each real rehearsal; do not pre-check it.
 | 1 | — | — | Not yet rehearsed |
 | 2 | — | — | Not yet rehearsed |
 | 3 | — | — | Not yet rehearsed |
-

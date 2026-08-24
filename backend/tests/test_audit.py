@@ -28,6 +28,9 @@ def test_agent_audit_is_sequenced_verified_and_redacted(tmp_path: Path) -> None:
 
     assert run["status"] == "completed"
     assert "POL-DENY-AUTONOMOUS-PAYMENT" in run["answer"]
+    assert run["policy_decision"] == "deny"
+    assert run["policy_rule_id"] == "POL-DENY-AUTONOMOUS-PAYMENT"
+    assert run["proposed_cart_id"] is None
     assert timeline.status_code == 200
     assert audit.status_code == 200
     body = audit.json()

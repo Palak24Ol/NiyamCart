@@ -294,8 +294,17 @@ def _finish(
     )
     recommended_product_ids: list[str] = []
     current_proposed_cart_id: str | None = None
+    policy_decision: str | None = None
+    policy_rule_id: str | None = None
     for event in events:
-        if event.sequence <= last_user_sequence or event.event_type != "tool_result":
+        if event.sequence <= last_user_sequence:
+            continue
+        if event.event_type == "policy_decision":
+            decision = event.payload.get("decision")
+            rule_id = event.payload.get("rule_id")
+            policy_decision = decision if isinstance(decision, str) else None
+            policy_rule_id = rule_id if isinstance(rule_id, str) else None
+        if event.event_type != "tool_result":
             continue
         cart_id = event.payload.get("cart_id")
         if isinstance(cart_id, str):
@@ -326,6 +335,8 @@ def _finish(
         revision_count=agent_session.revision_count,
         estimated_cost_microusd=agent_session.estimated_cost_microusd,
         recommended_product_ids=recommended_product_ids[:8],
+        policy_decision=policy_decision,
+        policy_rule_id=policy_rule_id,
     )
 
 
