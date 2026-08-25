@@ -648,6 +648,46 @@ a { color: inherit; text-decoration: none; }
 .reward-list small { color: var(--muted); font-size: 8px; }
 .reward-list em { color: var(--green); font-size: 9px; font-style: normal; font-weight: 800; white-space: nowrap; }
 .reward-disclaimer { display: flex; align-items: flex-start; gap: 4px; }
+.applied-offer-card { padding: 11px; border: 1px solid #a8cbb4; border-radius: 11px; background: linear-gradient(135deg, #edf8f0, #f9fcfa); display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 9px; }
+.applied-offer-icon { width: 30px; height: 30px; border-radius: 50%; color: white; background: var(--green); display: grid; place-items: center; }
+.applied-offer-card > div:nth-child(2) { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; }
+.applied-offer-card small { width: 100%; color: #337052; font-size: 8px; font-weight: 900; letter-spacing: .7px; }
+.applied-offer-card b { width: 100%; font-size: 11px; }
+.applied-offer-card code, .offer-marketplace code { padding: 2px 5px; border-radius: 4px; color: #315c43; background: #dceee1; font: 800 8px monospace; }
+.applied-offer-card span { color: #176b4c; font-size: 9px; font-weight: 800; }
+.applied-offer-card > button { border: 0; color: var(--green); background: transparent; font-size: 9px; font-weight: 900; text-decoration: underline; }
+.coupon-entry { padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: white; display: grid; gap: 7px; }
+.coupon-entry > div { display: grid; gap: 2px; }
+.coupon-entry b { font-size: 10px; }
+.coupon-entry small { color: var(--muted); font-size: 8px; line-height: 1.35; }
+.coupon-entry > span { display: grid; grid-template-columns: 1fr auto; }
+.coupon-entry input { min-width: 0; height: 36px; padding: 0 9px; border: 1px solid #b9ccc0; border-right: 0; border-radius: 7px 0 0 7px; text-transform: uppercase; font-size: 10px; font-weight: 800; letter-spacing: .5px; }
+.coupon-entry button { padding: 0 13px; border-radius: 0 7px 7px 0; color: white; background: var(--green); font-size: 9px; font-weight: 800; }
+.coupon-entry > em { color: #9a4c2c; font-size: 8px; font-style: normal; }
+.coupon-entry > em.success { color: #176b4c; font-weight: 800; }
+.offer-marketplace { padding: 8px; border: 1px solid var(--line); border-radius: 11px; background: #f7f8f5; display: grid; gap: 6px; }
+.offer-marketplace-heading { padding: 2px 2px 5px; display: flex; align-items: center; justify-content: space-between; }
+.offer-marketplace-heading b { font-size: 10px; }
+.offer-marketplace-heading small { color: var(--muted); font-size: 8px; }
+.offer-marketplace > button { width: 100%; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: white; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; text-align: left; }
+.offer-marketplace > button.selected { border-color: var(--green); background: #f0f8f2; box-shadow: inset 0 0 0 1px var(--green); }
+.offer-marketplace > button > span:first-child { width: 20px; height: 20px; color: white; border-radius: 50%; background: var(--green); display: grid; place-items: center; }
+.offer-radio { width: 8px; height: 8px; border: 1px solid #8da096; border-radius: 50%; background: white; }
+.offer-marketplace p { margin: 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 3px 5px; }
+.offer-marketplace p b, .offer-marketplace p small { width: 100%; }
+.offer-marketplace p b { font-size: 9px; }
+.offer-marketplace p small { color: var(--muted); font-size: 8px; line-height: 1.3; }
+.offer-marketplace > button > em { color: var(--green); font-size: 9px; font-style: normal; font-weight: 900; white-space: nowrap; }
+.unavailable-offers { padding: 6px 3px 2px; }
+.unavailable-offers summary { color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 800; }
+.unavailable-offers > p { padding: 7px 2px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+.unavailable-offers > p span { display: grid; gap: 2px; }
+.unavailable-offers > p b { font-size: 9px; }
+.unavailable-offers > p small, .unavailable-offers > p em { color: var(--muted); font-size: 8px; font-style: normal; }
+.reward-empty { margin: 0; padding: 9px; border-radius: 8px; color: var(--muted); background: #f4f5f2; font-size: 8px; line-height: 1.4; }
+.reward-toggle { width: fit-content; border: 0; color: var(--green); background: transparent; display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 800; text-decoration: underline; }
+.reward-toggle svg { transition: transform .18s ease; }
+.reward-toggle svg.expanded { transform: rotate(180deg); }
 .discount-line b { color: var(--green); }
 .paid-cart-state { flex: 1; padding: 20px; overflow-y: auto; display: grid; align-content: start; gap: 14px; }
 .paid-celebration { padding: 18px; border-radius: 15px; color: white; background: var(--green-dark); display: flex; align-items: flex-start; gap: 12px; }

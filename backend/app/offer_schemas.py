@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class PaymentOfferResponse(BaseModel):
     key: str
+    code: str | None
     title: str
     payment_method: str
     terms: str

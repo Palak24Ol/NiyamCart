@@ -1,6 +1,7 @@
 [
   {
     "key": "standard",
+    "code": null,
     "title": "Pay without an offer",
     "payment_method": "Any Razorpay method",
     "discount_type": "none",
@@ -13,6 +14,7 @@
   },
   {
     "key": "smart_cart_100",
+    "code": "SMART100",
     "title": "Smart Cart ₹100 Off",
     "payment_method": "Any Razorpay method",
     "discount_type": "flat",
@@ -25,6 +27,7 @@
   },
   {
     "key": "festive_8",
+    "code": "FESTIVE8",
     "title": "Festive 8% Off",
     "payment_method": "Any Razorpay method",
     "discount_type": "percent",
@@ -37,6 +40,7 @@
   },
   {
     "key": "bundle_150",
+    "code": "BUNDLE150",
     "title": "Bundle ₹150 Off",
     "payment_method": "Any Razorpay method",
     "discount_type": "flat",
@@ -49,6 +53,7 @@
   },
   {
     "key": "upi_saver",
+    "code": "UPI30",
     "title": "UPI Saver",
     "payment_method": "UPI",
     "discount_type": "flat",
@@ -61,6 +66,7 @@
   },
   {
     "key": "card_10",
+    "code": "CARD10",
     "title": "Card 10% Saver",
     "payment_method": "Eligible credit/debit card",
     "discount_type": "percent",
@@ -73,6 +79,7 @@
   },
   {
     "key": "netbanking_75",
+    "code": "NB75",
     "title": "Netbanking Saver",
     "payment_method": "Eligible netbanking bank",
     "discount_type": "flat",

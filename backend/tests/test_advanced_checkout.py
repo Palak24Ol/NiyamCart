@@ -140,6 +140,7 @@ def test_best_merchant_coupon_is_selectable_and_sets_discounted_order_total(
         )
 
     assert offers["best_offer_key"] == "festive_8"
+    assert best["code"] == "FESTIVE8"
     assert best["status"] == "available"
     assert best["savings_paise"] > 0
     assert selected.status_code == 200

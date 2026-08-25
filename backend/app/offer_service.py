@@ -21,6 +21,7 @@ OFFER_PATH = Path(__file__).resolve().parents[1] / "data" / "payment_offers.json
 @dataclass(frozen=True)
 class OfferDefinition:
     key: str
+    code: str | None
     title: str
     payment_method: str
     discount_type: str
@@ -88,6 +89,7 @@ def available_offers(total_paise: int) -> list[PaymentOfferResponse]:
         offers.append(
             PaymentOfferResponse(
                 key=definition.key,
+                code=definition.code,
                 title=definition.title,
                 payment_method=definition.payment_method,
                 terms=definition.terms,

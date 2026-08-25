@@ -123,6 +123,7 @@ export type DeliveryQuote = {
 
 export type PaymentOffer = {
   key: string;
+  code: string | null;
   title: string;
   payment_method: string;
   terms: string;

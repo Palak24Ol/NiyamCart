@@ -591,6 +591,10 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
   const [offers, setOffers] = useState<PaymentOffer[]>([]);
   const [bestOfferKey, setBestOfferKey] = useState("standard");
   const [selectedOfferKey, setSelectedOfferKey] = useState("standard");
+  const [checkoutCartSignature, setCheckoutCartSignature] = useState<string | null>(null);
+  const [showOfferChooser, setShowOfferChooser] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"any" | "upi" | "card" | "netbanking" | "wallet">("upi");
   const [selectedRewardId, setSelectedRewardId] = useState<string | null>(null);
   const [checkoutState, setCheckoutState] = useState<
@@ -608,6 +612,33 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
   const [bundleRejected, setBundleRejected] = useState(false);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [rescueResult, setRescueResult] = useState<string | null>(null);
+  const cartSignature = lines
+    .map(({ product, quantity }) => `${product.id}:${quantity}`)
+    .sort()
+    .join("|");
+  const [renderedCartSignature, setRenderedCartSignature] = useState(cartSignature);
+
+  // React-supported derived-state reset: cart edits immediately revoke every
+  // checkout artifact that was calculated for the previous quantities.
+  if (renderedCartSignature !== cartSignature && !receipt) {
+    setRenderedCartSignature(cartSignature);
+    setApproval(null);
+    setCheckoutCartId(null);
+    setCheckoutCartSignature(null);
+    setCheckoutStep("cart");
+    setDeliveryQuote(null);
+    setOffers([]);
+    setBestOfferKey("standard");
+    setSelectedOfferKey("standard");
+    setSelectedRewardId(null);
+    setShowOfferChooser(false);
+    setCouponCode("");
+    setCouponMessage(null);
+    setCheckoutState("idle");
+    setRescueResult(null);
+    setWhatsappState(null);
+    setCheckoutError("Cart updated. Delivery, savings and approval need a fresh check.");
+  }
 
   useEffect(() => {
     let active = true;
@@ -675,6 +706,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
         || saved.find((address) => address.is_default)
         || saved[0];
       setCheckoutCartId(proposed.id);
+      setCheckoutCartSignature(cartSignature);
       setAddresses(saved);
       setSelectedAddressId(selected?.id || null);
       onScope({ cartId: proposed.id, orderId: null });
@@ -688,6 +720,9 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
         setOffers(paymentOffers.items);
         setBestOfferKey(paymentOffers.best_offer_key);
         setSelectedOfferKey(paymentOffers.best_offer_key);
+        setShowOfferChooser(false);
+        setCouponCode("");
+        setCouponMessage(null);
         setCheckoutStep("offer");
       }
       setCheckoutState("idle");
@@ -709,6 +744,9 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
       setOffers(paymentOffers.items);
       setBestOfferKey(paymentOffers.best_offer_key);
       setSelectedOfferKey(paymentOffers.best_offer_key);
+      setShowOfferChooser(false);
+      setCouponCode("");
+      setCouponMessage(null);
       onPreferredAddressChange(selectedAddressId);
       setCheckoutStep("offer");
     } catch (error) {
@@ -820,9 +858,29 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
   };
 
   const selectedOffer = offers.find((offer) => offer.key === selectedOfferKey);
-  const displayTotal = selectedOffer?.expected_payable_paise
-    ?? approval?.total_paise
-    ?? subtotal + (deliveryQuote?.delivery_paise || 0);
+  const checkoutMatchesCart = checkoutCartSignature === cartSignature;
+  const activeOffer = checkoutMatchesCart ? selectedOffer : undefined;
+  const displayTotal = activeOffer?.expected_payable_paise
+    ?? (checkoutMatchesCart ? approval?.total_paise : undefined)
+    ?? subtotal + (checkoutMatchesCart ? deliveryQuote?.delivery_paise || 0 : 0);
+  const selectableOffers = offers.filter((offer) => offer.provider_configured && offer.eligible);
+  const unavailableOffers = offers.filter((offer) => !offer.provider_configured || !offer.eligible);
+  const applyCoupon = () => {
+    const normalized = couponCode.trim().toUpperCase();
+    const offer = offers.find((item) => item.code?.toUpperCase() === normalized);
+    if (!offer) {
+      setCouponMessage("That coupon code is not available for this cart.");
+      return;
+    }
+    if (!offer.eligible || !offer.provider_configured) {
+      setCouponMessage(offer.reason);
+      return;
+    }
+    setSelectedOfferKey(offer.key);
+    setCouponCode(offer.code || "");
+    setCouponMessage(`${offer.code} applied. You save ${formatMoney(offer.savings_paise)}.`);
+    setShowOfferChooser(false);
+  };
 
   return (
     <div className="drawer-layer">
@@ -860,18 +918,20 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
           {checkoutStep === "offer" && deliveryQuote && (
             <section className="checkout-step-card">
               <div className="delivery-confirmed"><Check size={15} /><span><b>{deliveryQuote.address_label} confirmed · {deliveryQuote.city} {deliveryQuote.masked_pincode}</b><small>{deliveryQuote.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free delivery"} · {deliveryQuote.eta_min_days}–{deliveryQuote.eta_max_days} days</small></span><button onClick={() => setCheckoutStep("address")}>Change</button></div>
-              <div className="step-title"><span>2</span><div><b>Best eligible offer applied</b><small>Niyam selects the largest real saving. You can choose any other eligible coupon.</small></div></div>
-              <div className="offer-options">{offers.map((offer) => <label className={`${selectedOfferKey === offer.key ? "selected" : ""} ${!offer.provider_configured || !offer.eligible ? "disabled" : ""}`} key={offer.key}><input type="radio" name="payment-offer" checked={selectedOfferKey === offer.key} disabled={!offer.provider_configured || !offer.eligible} onChange={() => setSelectedOfferKey(offer.key)} /><span><b>{offer.title}{offer.key === bestOfferKey && offer.savings_paise > 0 ? " · Best applicable saving" : ""}</b><small>{offer.reason}</small><em>{offer.savings_paise ? `Save ${formatMoney(offer.savings_paise)} · Pay ${formatMoney(offer.expected_payable_paise)}` : "Pay the regular cart total"}</em></span></label>)}</div>
-              <div className="payment-method-choices"><b>How would you prefer to pay?</b><small>Choose a preference now; Razorpay performs the final instrument selection and authentication.</small><div>{([['upi','UPI','Fastest'],['card','Credit / debit card','Bank rewards'],['netbanking','Netbanking','Choose your bank'],['wallet','Wallet','Supported wallets']] as const).map(([key, title, note]) => <button className={selectedPaymentMethod === key ? "selected" : ""} onClick={() => setSelectedPaymentMethod(key)} key={key}><span>{title}</span><small>{note}</small>{selectedPaymentMethod === key && <Check size={14} />}</button>)}</div></div>
-              <PaymentRewardPicker amountPaise={selectedOffer?.expected_payable_paise ?? subtotal} selectedId={selectedRewardId} onSelect={(reward) => { setSelectedRewardId(reward.id); setSelectedPaymentMethod(reward.type); }} />
+              <div className="step-title"><span>2</span><div><b>Offers &amp; payment</b><small>The best eligible cart saving is applied automatically. You can change it before locking the cart.</small></div></div>
+              {activeOffer && <div className="applied-offer-card"><div className="applied-offer-icon"><Check size={17} /></div><div><small>{activeOffer.savings_paise ? "BEST OFFER APPLIED" : "NO COUPON APPLIED"}</small><b>{activeOffer.title}</b>{activeOffer.code && <code>{activeOffer.code}</code>}<span>{activeOffer.savings_paise ? `You save ${formatMoney(activeOffer.savings_paise)} · Pay ${formatMoney(activeOffer.expected_payable_paise)}` : "Pay the regular cart total"}</span></div><button type="button" onClick={() => setShowOfferChooser((value) => !value)}>{showOfferChooser ? "Done" : "Change"}</button></div>}
+              <div className="coupon-entry"><div><b>Have a coupon code?</b><small>Try SMART100, FESTIVE8 or BUNDLE150 when the cart qualifies.</small></div><span><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase()); setCouponMessage(null); }} onKeyDown={(event) => { if (event.key === "Enter") applyCoupon(); }} placeholder="Enter coupon" aria-label="Coupon code" /><button type="button" onClick={applyCoupon}>Apply</button></span>{couponMessage && <em className={couponMessage.includes("applied") ? "success" : ""}>{couponMessage}</em>}</div>
+              {showOfferChooser && <div className="offer-marketplace"><div className="offer-marketplace-heading"><b>Available for this cart</b><small>{selectableOffers.length} selectable offers</small></div>{selectableOffers.map((offer) => <button type="button" className={selectedOfferKey === offer.key ? "selected" : ""} onClick={() => { setSelectedOfferKey(offer.key); setCouponCode(offer.code || ""); setCouponMessage(null); }} key={offer.key}><span>{selectedOfferKey === offer.key ? <Check size={14} /> : <span className="offer-radio" />}</span><p><b>{offer.title}{offer.key === bestOfferKey && offer.savings_paise > 0 ? " · Best saving" : ""}</b><small>{offer.terms}</small>{offer.code && <code>{offer.code}</code>}</p><em>{offer.savings_paise ? `−${formatMoney(offer.savings_paise)}` : "No saving"}</em></button>)}{!!unavailableOffers.length && <details className="unavailable-offers"><summary>{unavailableOffers.length} more bank/UPI offers</summary>{unavailableOffers.map((offer) => <p key={offer.key}><span><b>{offer.title}</b><small>{offer.reason}</small></span><em>{offer.code || "Eligibility required"}</em></p>)}</details>}</div>}
+              <div className="payment-method-choices"><b>How would you prefer to pay?</b><small>Choose a preference now; Razorpay performs the final instrument selection and authentication.</small><div>{([['upi','UPI','Fastest'],['card','Credit / debit card','Bank rewards'],['netbanking','Netbanking','Choose your bank'],['wallet','Wallet','Supported wallets']] as const).map(([key, title, note]) => <button type="button" className={selectedPaymentMethod === key ? "selected" : ""} onClick={() => { setSelectedPaymentMethod(key); setSelectedRewardId(null); }} key={key}><span>{title}</span><small>{note}</small>{selectedPaymentMethod === key && <Check size={14} />}</button>)}</div></div>
+              <PaymentRewardPicker key={selectedPaymentMethod} amountPaise={activeOffer?.expected_payable_paise ?? subtotal} selectedId={selectedRewardId} methodFilter={selectedPaymentMethod} onSelect={(reward) => { setSelectedRewardId(reward.id); setSelectedPaymentMethod(reward.type); }} />
               <button className="step-primary" onClick={() => void lockFinalCart()} disabled={checkoutState === "locking"}>{checkoutState === "locking" ? "Locking exact cart…" : "Confirm choice & lock final cart"}<ArrowRight size={15} /></button>
             </section>
           )}
         </div>
         {!!lines.length && <div className="cart-summary">
           <div><span>Subtotal</span><b>{formatMoney(subtotal)}</b></div>
-          <div><span>Delivery</span><b className="free">{deliveryQuote?.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free"}</b></div>
-          {selectedOffer?.savings_paise ? <div className="discount-line"><span>Offer saving</span><b>−{formatMoney(selectedOffer.savings_paise)}</b></div> : null}
+          <div><span>Delivery</span><b className="free">{checkoutMatchesCart && deliveryQuote?.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free"}</b></div>
+          {activeOffer?.savings_paise ? <div className="discount-line"><span>Offer saving</span><b>−{formatMoney(activeOffer.savings_paise)}</b></div> : null}
           <div className="total-line"><span>Final payable</span><strong>{formatMoney(displayTotal)}</strong></div>
           <div className="approval-box"><ShieldCheck size={19} /><p><b>You remain in control</b><small>We’ll lock and show the exact cart again before opening Razorpay test checkout.</small></p></div>
           {approval && checkoutState !== "paid" && (
