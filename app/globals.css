@@ -591,3 +591,75 @@ a { color: inherit; text-decoration: none; }
 .ledger-proof > div { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.13); display: flex; justify-content: space-between; }
 .ledger-proof > small { margin-top: 14px; color: #d5e5da; display: flex; align-items: center; gap: 5px; }
 @media (max-width: 760px) { .ledger-metrics { grid-template-columns: 1fr 1fr; } .growth-ledger-shell > header { flex-direction: column; } .address-form { grid-template-columns: 1fr; } .address-form .save-address { grid-column: auto; } .location-consent { grid-template-columns: auto 1fr; } .location-consent button { grid-column: 2; } }
+
+.chat-checkout { margin-top: 12px; padding: 13px; border: 1px solid #b9d4c3; border-radius: 13px; background: #f6fbf7; display: grid; gap: 10px; }
+.chat-checkout-heading { display: flex; align-items: center; gap: 9px; }
+.chat-checkout-heading > span { width: 30px; height: 30px; border-radius: 9px; color: white; background: var(--green); display: grid; place-items: center; }
+.chat-checkout-heading > div { display: grid; gap: 2px; }
+.chat-checkout-heading b { font-size: 12px; }
+.chat-checkout-heading small, .chat-checkout-message, .chat-checkout-safety { color: var(--muted); font-size: 9px; line-height: 1.4; }
+.chat-product-summary { padding: 8px 10px; border-radius: 8px; background: white; display: grid; gap: 3px; font-size: 10px; }
+.chat-checkout-actions, .chat-address-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-checkout-actions button, .chat-address-actions button, .chat-confirm-address, .chat-continue-checkout { min-height: 34px; padding: 7px 10px; border: 1px solid #bed1c4; border-radius: 8px; color: var(--green); background: white; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 10px; font-weight: 800; }
+.chat-checkout-actions .primary, .chat-confirm-address, .chat-continue-checkout { color: white; background: var(--green); }
+.chat-confirm-address, .chat-continue-checkout { width: 100%; }
+.chat-checkout button:disabled { opacity: .55; cursor: not-allowed; }
+.chat-address-options { display: grid; gap: 6px; }
+.chat-address-options label { padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: white; display: flex; gap: 7px; cursor: pointer; }
+.chat-address-options label.selected { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.chat-address-options span { display: grid; gap: 2px; }
+.chat-address-options b { font-size: 10px; }
+.chat-address-options small { color: var(--muted); font-size: 9px; }
+.chat-address-form { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.chat-address-form input { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: white; font-size: 10px; }
+.chat-address-form button { grid-column: 1 / -1; min-height: 34px; border-radius: 7px; color: white; background: var(--green); font-size: 10px; font-weight: 800; }
+.chat-address-confirmed { padding: 10px; border-radius: 9px; color: var(--green); background: #e3f2e8; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.chat-address-confirmed p { margin: 0; display: grid; gap: 2px; }
+.chat-address-confirmed small { color: var(--muted); font-size: 9px; }
+.chat-address-confirmed button { border: 0; color: var(--green); background: transparent; font-size: 9px; font-weight: 800; text-decoration: underline; }
+.chat-checkout-safety { display: flex; align-items: flex-start; gap: 4px; }
+.compact-address-card select { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid #b9ccc0; border-radius: 9px; background: white; font: inherit; font-size: 11px; }
+.cart-delivery-bar { margin: 10px 14px 2px; padding: 10px; border: 1px solid #cadbd0; border-radius: 10px; background: #f3f8f4; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.cart-delivery-bar > span { display: grid; gap: 2px; }
+.cart-delivery-bar b { font-size: 10px; }
+.cart-delivery-bar small { color: var(--muted); font-size: 8px; }
+.cart-delivery-bar select { min-width: 0; height: 34px; padding: 0 7px; border: 1px solid #b9ccc0; border-radius: 7px; background: white; font-size: 9px; }
+.cart-delivery-bar button { border: 0; color: var(--green); background: transparent; font-size: 9px; font-weight: 800; text-decoration: underline; }
+.manage-address-link { border: 0; color: var(--green); background: transparent; font-size: 10px; font-weight: 800; text-align: left; text-decoration: underline; }
+.delivery-confirmed > button { margin-left: auto; border: 0; color: var(--green); background: transparent; font-size: 9px; font-weight: 800; text-decoration: underline; }
+.payment-method-choices { padding-top: 4px; display: grid; gap: 5px; }
+.payment-method-choices > small { color: var(--muted); font-size: 9px; line-height: 1.35; }
+.payment-method-choices > div { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.payment-method-choices button { position: relative; min-height: 52px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: white; display: grid; gap: 2px; text-align: left; }
+.payment-method-choices button.selected { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.payment-method-choices button span { font-size: 10px; font-weight: 800; }
+.payment-method-choices button small { color: var(--muted); font-size: 8px; }
+.payment-method-choices button svg { position: absolute; right: 7px; top: 7px; color: var(--green); }
+.reward-picker { padding-top: 3px; display: grid; gap: 8px; }
+.reward-picker-heading { display: flex; align-items: center; gap: 7px; }
+.reward-picker-heading > p { margin: 0; display: grid; gap: 2px; }
+.reward-picker-heading small, .reward-disclaimer { color: var(--muted); font-size: 8px; line-height: 1.35; }
+.reward-list { max-height: 215px; padding-right: 3px; overflow-y: auto; display: grid; gap: 5px; }
+.reward-list button { min-height: 48px; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: white; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 7px; text-align: left; }
+.reward-list button.selected { border-color: var(--green); background: #f1f8f3; box-shadow: inset 0 0 0 1px var(--green); }
+.reward-rank { width: 23px; height: 23px; border-radius: 7px; color: var(--green); background: #e7f1ea; display: grid; place-items: center; font-size: 8px; font-weight: 900; }
+.reward-list p { margin: 0; display: grid; gap: 2px; }
+.reward-list b { font-size: 9px; }
+.reward-list small { color: var(--muted); font-size: 8px; }
+.reward-list em { color: var(--green); font-size: 9px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.reward-disclaimer { display: flex; align-items: flex-start; gap: 4px; }
+.discount-line b { color: var(--green); }
+.paid-cart-state { flex: 1; padding: 20px; overflow-y: auto; display: grid; align-content: start; gap: 14px; }
+.paid-celebration { padding: 18px; border-radius: 15px; color: white; background: var(--green-dark); display: flex; align-items: flex-start; gap: 12px; }
+.paid-celebration > span { width: 42px; height: 42px; border-radius: 50%; color: var(--green-dark); background: #bfe6cb; display: grid; place-items: center; }
+.paid-celebration small { color: #bcd5c7; font-size: 8px; font-weight: 800; letter-spacing: 1px; }
+.paid-celebration h3 { margin: 4px 0; font: 700 18px Manrope; }
+.paid-celebration p { margin: 0; color: #d1e1d8; font-size: 10px; line-height: 1.4; }
+.paid-cart-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.paid-cart-actions a, .paid-cart-actions button { min-height: 42px; border: 1px solid var(--green); border-radius: 9px; color: var(--green); background: white; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 10px; font-weight: 800; }
+.paid-cart-actions a { color: white; background: var(--green); }
+
+@media (max-width: 520px) {
+  .chat-address-form, .payment-method-choices > div, .paid-cart-actions { grid-template-columns: 1fr; }
+  .chat-address-form button { grid-column: auto; }
+}

@@ -8,7 +8,44 @@
     "max_discount_paise": 0,
     "minimum_cart_paise": 0,
     "provider_offer_env": null,
+    "funding": "merchant",
     "terms": "Standard Razorpay test checkout; the buyer chooses the payment instrument."
+  },
+  {
+    "key": "smart_cart_100",
+    "title": "Smart Cart ₹100 Off",
+    "payment_method": "Any Razorpay method",
+    "discount_type": "flat",
+    "discount_value": 10000,
+    "max_discount_paise": 10000,
+    "minimum_cart_paise": 200000,
+    "provider_offer_env": null,
+    "funding": "merchant",
+    "terms": "Merchant-funded ₹100 cart coupon on orders of ₹2,000 or more."
+  },
+  {
+    "key": "festive_8",
+    "title": "Festive 8% Off",
+    "payment_method": "Any Razorpay method",
+    "discount_type": "percent",
+    "discount_value": 8,
+    "max_discount_paise": 25000,
+    "minimum_cart_paise": 100000,
+    "provider_offer_env": null,
+    "funding": "merchant",
+    "terms": "Merchant-funded 8% cart coupon up to ₹250 on orders of ₹1,000 or more."
+  },
+  {
+    "key": "bundle_150",
+    "title": "Bundle ₹150 Off",
+    "payment_method": "Any Razorpay method",
+    "discount_type": "flat",
+    "discount_value": 15000,
+    "max_discount_paise": 15000,
+    "minimum_cart_paise": 350000,
+    "provider_offer_env": null,
+    "funding": "merchant",
+    "terms": "Merchant-funded ₹150 cart coupon on orders of ₹3,500 or more."
   },
   {
     "key": "upi_saver",
@@ -19,6 +56,7 @@
     "max_discount_paise": 3000,
     "minimum_cart_paise": 29900,
     "provider_offer_env": "RAZORPAY_OFFER_UPI_ID",
+    "funding": "razorpay",
     "terms": "₹30 instant saving on eligible UPI payments. Razorpay validates eligibility."
   },
   {
@@ -30,6 +68,7 @@
     "max_discount_paise": 15000,
     "minimum_cart_paise": 50000,
     "provider_offer_env": "RAZORPAY_OFFER_CARD_ID",
+    "funding": "razorpay",
     "terms": "10% instant saving up to ₹150 on eligible cards. Razorpay validates issuer and card."
   },
   {
@@ -41,6 +80,7 @@
     "max_discount_paise": 7500,
     "minimum_cart_paise": 99900,
     "provider_offer_env": "RAZORPAY_OFFER_NETBANKING_ID",
+    "funding": "razorpay",
     "terms": "₹75 instant saving on an eligible bank. Razorpay validates the selected bank."
   }
 ]

@@ -28,6 +28,7 @@ class OfferDefinition:
     max_discount_paise: int
     minimum_cart_paise: int
     provider_offer_env: str | None
+    funding: str
     terms: str
 
 
@@ -59,7 +60,11 @@ def available_offers(total_paise: int) -> list[PaymentOfferResponse]:
     for definition in _definitions():
         standard = definition.key == "standard"
         eligible = standard or total_paise >= definition.minimum_cart_paise
-        provider_configured = standard or _provider_id(definition) is not None
+        provider_configured = (
+            standard
+            or definition.funding == "merchant"
+            or _provider_id(definition) is not None
+        )
         savings = _saving(definition, total_paise)
         status = (
             "standard"
@@ -76,6 +81,8 @@ def available_offers(total_paise: int) -> list[PaymentOfferResponse]:
             reason = f"Requires a cart of at least ₹{definition.minimum_cart_paise / 100:,.0f}."
         elif not provider_configured:
             reason = "Preview only until its Razorpay test Offer ID is configured."
+        elif definition.funding == "merchant":
+            reason = "Merchant-funded cart coupon; applied before Razorpay test checkout."
         else:
             reason = "Merchant-approved and eligible by cart value; Razorpay checks the instrument."
         offers.append(
@@ -101,6 +108,7 @@ def select_offer(
     cart_id: str,
     offer_key: str,
     confirmed: bool,
+    preferred_payment_method: str = "any",
 ) -> CartOfferSelection:
     if not confirmed:
         raise CommerceError(422, "OFFER_CONFIRMATION_REQUIRED", "Confirm the payment offer first")
@@ -128,7 +136,11 @@ def select_offer(
     cart.offer_selection = selection
     selection.offer_key = offer.key
     selection.provider_offer_id = _provider_id(definition)
-    selection.payment_method = offer.payment_method
+    selection.payment_method = (
+        offer.payment_method
+        if definition.funding == "razorpay"
+        else preferred_payment_method
+    )
     selection.title = offer.title
     selection.savings_paise = offer.savings_paise
     selection.expected_payable_paise = offer.expected_payable_paise
@@ -141,9 +153,10 @@ def select_offer(
         {
             "offer_key": selection.offer_key,
             "payment_method": selection.payment_method,
+            "funding": definition.funding,
             "savings_paise": selection.savings_paise,
             "expected_payable_paise": selection.expected_payable_paise,
-            "provider_eligibility_requires_checkout_validation": True,
+            "provider_eligibility_requires_checkout_validation": definition.funding == "razorpay",
             "buyer_confirmed": True,
         },
     )

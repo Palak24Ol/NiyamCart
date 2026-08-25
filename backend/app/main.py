@@ -437,6 +437,7 @@ def create_app(
             cart_id,
             payload.offer_key,
             payload.confirmed,
+            payload.preferred_payment_method,
         )
         return SelectedPaymentOfferResponse(
             offer_key=selection.offer_key,
@@ -444,8 +445,11 @@ def create_app(
             payment_method=selection.payment_method,
             savings_paise=selection.savings_paise,
             expected_payable_paise=selection.expected_payable_paise,
-            provider_configured=selection.provider_offer_id is not None
-            or selection.offer_key == "standard",
+            provider_configured=next(
+                item.provider_configured
+                for item in available_offers(load_cart(session, cart_id).total_paise)
+                if item.key == selection.offer_key
+            ),
             selected_at=selection.selected_at,
         )
 

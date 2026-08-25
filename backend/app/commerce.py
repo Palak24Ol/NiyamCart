@@ -438,13 +438,17 @@ def create_order(
             return recovered
         raise CommerceError(409, "ORDER_ALREADY_CLAIMED", "Another request claimed this cart")
 
+    selected_offer = session.get(CartOfferSelection, cart.id)
+    order_total_paise = (
+        selected_offer.expected_payable_paise if selected_offer else cart.total_paise
+    )
     order = Order(
         id=str(uuid4()),
         cart_id=cart.id,
         idempotency_key=request.idempotency_key,
         status="payment_pending",
         currency=cart.currency,
-        total_paise=cart.total_paise,
+        total_paise=order_total_paise,
         cart_hash=cart.cart_hash,
     )
     session.add(order)
@@ -534,11 +538,7 @@ def finalise_payment(
     accepted = False
     reason = "verification_failed"
     selected_offer = session.get(CartOfferSelection, order.cart_id)
-    expected_amount = (
-        selected_offer.expected_payable_paise
-        if selected_offer and selected_offer.provider_offer_id
-        else order.total_paise
-    )
+    expected_amount = order.total_paise
     expected_offer_id = selected_offer.provider_offer_id if selected_offer else None
 
     if not evidence.signature_verified:

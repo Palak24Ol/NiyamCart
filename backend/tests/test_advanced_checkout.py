@@ -100,6 +100,54 @@ def test_unconfigured_offers_are_preview_only(tmp_path: Path, monkeypatch) -> No
     assert forced.json()["error"] == "OFFER_NOT_CONFIGURED"
 
 
+def test_best_merchant_coupon_is_selectable_and_sets_discounted_order_total(
+    tmp_path: Path,
+) -> None:
+    app = create_app(f"sqlite:///{tmp_path / 'merchant-offer.db'}")
+    with TestClient(app) as client:
+        signup(client)
+        cart_response = client.post(
+            "/api/carts", json={"items": [{"product_id": "P-001", "quantity": 6}]}
+        )
+        cart = cart_response.json()
+        saved = address(client)
+        client.post(
+            f"/api/carts/{cart['id']}/delivery",
+            json={"address_id": saved["id"], "confirmed": True},
+        )
+        offers = client.get(f"/api/carts/{cart['id']}/payment-offers").json()
+        best = next(item for item in offers["items"] if item["key"] == offers["best_offer_key"])
+        selected = client.post(
+            f"/api/carts/{cart['id']}/payment-offer",
+            json={
+                "offer_key": best["key"],
+                "preferred_payment_method": "card",
+                "confirmed": True,
+            },
+        )
+        frozen = client.post(f"/api/carts/{cart['id']}/finalize").json()
+        client.post(
+            f"/api/carts/{cart['id']}/approve",
+            json={"cart_hash": frozen["cart_hash"]},
+        )
+        order = client.post(
+            "/api/orders",
+            json={
+                "cart_id": cart["id"],
+                "cart_hash": frozen["cart_hash"],
+                "idempotency_key": f"merchant-offer-{cart['id']}",
+            },
+        )
+
+    assert offers["best_offer_key"] == "festive_8"
+    assert best["status"] == "available"
+    assert best["savings_paise"] > 0
+    assert selected.status_code == 200
+    assert selected.json()["payment_method"] == "card"
+    assert order.status_code == 201
+    assert order.json()["total_paise"] == best["expected_payable_paise"]
+
+
 def test_cart_rescue_revokes_approval_and_requires_fresh_review(tmp_path: Path) -> None:
     app = create_app(f"sqlite:///{tmp_path / 'rescue.db'}")
     with TestClient(app) as client:

@@ -57,13 +57,17 @@ The clean frontend/backend foundation is implemented with:
 - Conversational saved/new/current-location delivery flow before final cart locking, with explicit
   consent before OpenStreetMap reverse geocoding and manual confirmation of the returned address.
 - Merchant-approved Razorpay test-offer ranking; previews are disabled until an Offer ID is set.
+- Auto-applied merchant cart coupons plus a buyer-changeable payment preference and a deterministic
+  PayPack-derived reward comparison; external reward estimates never reduce the charged total.
+- In-chat product approval and saved/new/current-location address selection, with a compact cart
+  address dropdown and a dedicated verified-order state that clears purchased items.
 - Self-healing cart rescue that shows replacements, revokes prior approval, and requires reapproval.
 - Causal Growth Ledger separating exposure, rejection, acceptance, and realised test uplift.
 - Functional login and sign-up with scrypt password hashing and HttpOnly cookie sessions.
 - Protected My Orders and Profile pages with account-scoped browser storage for MVP preferences and receipts.
 - Eight-step, two-revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
-- 99 automated tests spanning unit, integration, randomized properties, reliability, and races.
+- 100 automated tests spanning unit, integration, randomized properties, reliability, and races.
 
 The frontend calls the bounded agent API directly. Shopper chat shows grounded products, policy
 refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and

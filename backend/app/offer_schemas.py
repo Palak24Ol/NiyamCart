@@ -27,6 +27,7 @@ class PaymentOfferListResponse(BaseModel):
 
 class SelectPaymentOfferRequest(BaseModel):
     offer_key: str = Field(min_length=2, max_length=40)
+    preferred_payment_method: Literal["any", "upi", "card", "netbanking", "wallet"] = "any"
     confirmed: bool
 
 

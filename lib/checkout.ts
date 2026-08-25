@@ -189,10 +189,18 @@ export const reverseGeocode = (
 export const getPaymentOffers = async (cartId: string) =>
   api<{ items: PaymentOffer[]; best_offer_key: string }>(`/api/carts/${cartId}/payment-offers`);
 
-export const selectPaymentOffer = (cartId: string, offerKey: string) =>
+export const selectPaymentOffer = (
+  cartId: string,
+  offerKey: string,
+  preferredPaymentMethod: "any" | "upi" | "card" | "netbanking" | "wallet" = "any",
+) =>
   api(`/api/carts/${cartId}/payment-offer`, {
     method: "POST",
-    body: JSON.stringify({ offer_key: offerKey, confirmed: true }),
+    body: JSON.stringify({
+      offer_key: offerKey,
+      preferred_payment_method: preferredPaymentMethod,
+      confirmed: true,
+    }),
   });
 
 export const finalizeCheckoutCart = (cartId: string) =>

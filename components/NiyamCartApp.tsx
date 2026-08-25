@@ -52,8 +52,6 @@ import {
   finalizeCheckoutCart,
   getAddresses,
   getPaymentOffers,
-  reverseGeocode,
-  saveAddress,
   selectPaymentOffer,
   demonstrateCartRescue,
   type ApprovalCart,
@@ -69,6 +67,8 @@ import {
   prepareWhatsAppReview,
   type WhatsAppHandoff,
 } from "@/lib/whatsapp";
+import { ConversationalCheckout } from "@/components/ConversationalCheckout";
+import { PaymentRewardPicker } from "@/components/PaymentRewardPicker";
 
 type Cart = Record<string, number>;
 type ChatTurn = { id: string; prompt: string; result: AgentRun; voiceInput: boolean };
@@ -120,6 +120,8 @@ export function NiyamCartApp() {
     orderId: null,
   });
   const [visibleCount, setVisibleCount] = useState(12);
+  const [preferredAddressId, setPreferredAddressId] = useState<string | null>(null);
+  const agentInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
@@ -311,7 +313,7 @@ export function NiyamCartApp() {
     try {
       const proposed = await getProposedCart(cartId);
       setCart(Object.fromEntries(proposed.items.map((item) => [item.product_id, item.quantity])));
-      setCartOpen(true);
+      setAgentOpen(true);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : "The proposed cart is unavailable.");
     }
@@ -452,7 +454,7 @@ export function NiyamCartApp() {
                     <p>{turn.result.answer}</p>
                     {answerAudio && <audio className="voice-answer" src={answerAudio} controls autoPlay={turn.voiceInput} preload="metadata">Your browser cannot play this response.</audio>}
                     {turn.voiceInput && !answerAudio && turn.result.voice_status === "unavailable" && <small className="voice-note"><Volume2 size={13} /> Text response shown because speech playback was unavailable.</small>}
-                    {turn.result.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart(turn.result.proposed_cart_id!)}>Review proposed cart <ArrowRight size={15} /></button>}
+                    {turn.result.proposed_cart_id && <button className="inline-action" onClick={() => void reviewAgentCart(turn.result.proposed_cart_id!)}>Use this product set <ArrowRight size={15} /></button>}
                   </div>
                   {turn.result.intent_mandate && (
                     <details className="intent-mandate">
@@ -469,17 +471,18 @@ export function NiyamCartApp() {
             {voiceProcessing && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>Understanding your voice</b><small>Detecting the language and preparing a catalogue-safe request.</small></div></div>}
             {agentLoading && <div className="agent-state" role="status" aria-live="polite"><LoaderCircle className="spin" size={18} /><div><b>{chatTurns.length ? "Refining your recommendations" : "Checking the live catalogue"}</b><small>Niyam remembers this conversation, but cannot order or pay.</small></div></div>}
             {agentError && <div className="agent-state error-state" role="alert"><CircleX size={18} /><div><b>Request not completed</b><small>{agentError}</small></div></div>}
+            {!!cartLines.length && <ConversationalCheckout lines={cartLines} subtotal={subtotal} preferredAddressId={preferredAddressId} onPreferredAddressChange={setPreferredAddressId} onReadyForCheckout={() => setCartOpen(true)} onAddMore={() => { setAgentQuery("I also need "); agentInputRef.current?.focus(); }} />}
           </div>
           <div className="agent-input">
             <button className={`voice-button${recording ? " recording" : ""}`} onClick={recording ? stopVoiceQuestion : () => void startVoiceQuestion()} aria-label={recording ? "Stop voice recording" : "Start voice recording"} aria-pressed={recording} disabled={agentLoading || voiceProcessing} title={recording ? "Stop recording" : "Speak in your language"}>{recording ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}</button>
-            <input value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !agentLoading && !voiceProcessing && !recording && void askAgent()} placeholder={recording ? "Listening…" : "Type or speak in your language…"} disabled={agentLoading || voiceProcessing || recording} aria-label="Shopping request" />
+            <input ref={agentInputRef} value={agentQuery} onChange={(event) => setAgentQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !agentLoading && !voiceProcessing && !recording && void askAgent()} placeholder={recording ? "Listening…" : "Type or speak in your language…"} disabled={agentLoading || voiceProcessing || recording} aria-label="Shopping request" />
             <button className="send-button" onClick={() => void askAgent()} aria-label="Send" disabled={agentLoading || voiceProcessing || recording || !agentQuery.trim()}>{agentLoading ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}</button>
           </div>
           <div className="panel-safety"><ShieldCheck size={13} /> 11 languages · No purchase without your approval</div>
         </aside>
       )}
 
-      {cartOpen && <CartDrawer key={cartLines.map(({ product, quantity }) => `${product.id}:${quantity}`).join("|")} lines={cartLines} subtotal={subtotal} updateCart={updateCart} onOpen={setSelectedProduct} close={() => setCartOpen(false)} onScope={rememberCommerceScope} />}
+      {cartOpen && <CartDrawer lines={cartLines} subtotal={subtotal} updateCart={updateCart} onOpen={setSelectedProduct} close={() => setCartOpen(false)} onScope={rememberCommerceScope} preferredAddressId={preferredAddressId} onPreferredAddressChange={setPreferredAddressId} onManageAddress={() => { setCartOpen(false); setAgentOpen(true); }} onPaymentComplete={() => setCart({})} />}
       {auditOpen && <TrustAuditDrawer agentSessionId={agentSessionId} cartId={commerceScopes.cartId} orderId={commerceScopes.orderId} close={() => setAuditOpen(false)} onRunFailureDemo={runSafeRefusalDemo} />}
       {selectedProduct && <ProductDetail product={selectedProduct} quantity={cart[selectedProduct.id] || 0} updateCart={updateCart} close={() => setSelectedProduct(null)} />}
     </div>
@@ -578,28 +581,18 @@ function ProductDetail({ product, quantity, updateCart, close }: { product: Prod
   );
 }
 
-function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { lines: { product: Product; quantity: number }[]; subtotal: number; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void; close: () => void; onScope: (scope: Partial<CommerceScopes>) => void }) {
+function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, preferredAddressId, onPreferredAddressChange, onManageAddress, onPaymentComplete }: { lines: { product: Product; quantity: number }[]; subtotal: number; updateCart: (id: string, delta: number) => void; onOpen: (product: Product) => void; close: () => void; onScope: (scope: Partial<CommerceScopes>) => void; preferredAddressId: string | null; onPreferredAddressChange: (addressId: string) => void; onManageAddress: () => void; onPaymentComplete: () => void }) {
   const [approval, setApproval] = useState<ApprovalCart | null>(null);
   const [checkoutCartId, setCheckoutCartId] = useState<string | null>(null);
   const [checkoutStep, setCheckoutStep] = useState<"cart" | "address" | "offer" | "approval">("cart");
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
-  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(preferredAddressId);
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [offers, setOffers] = useState<PaymentOffer[]>([]);
   const [bestOfferKey, setBestOfferKey] = useState("standard");
   const [selectedOfferKey, setSelectedOfferKey] = useState("standard");
-  const [showAddressForm, setShowAddressForm] = useState(false);
-  const [locationMessage, setLocationMessage] = useState<string | null>(null);
-  const [pendingCoordinates, setPendingCoordinates] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
-  const [addressVoiceRecording, setAddressVoiceRecording] = useState(false);
-  const [addressVoiceMessage, setAddressVoiceMessage] = useState<string | null>(null);
-  const addressRecorderRef = useRef<MediaRecorder | null>(null);
-  const addressStreamRef = useRef<MediaStream | null>(null);
-  const addressChunksRef = useRef<Blob[]>([]);
-  const [addressDraft, setAddressDraft] = useState({ label: "Home", recipient_name: "", phone: "+91", line1: "", locality: "", landmark: "", city: "", state: "", pincode: "", latitude: null as number | null, longitude: null as number | null, is_default: true });
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"any" | "upi" | "card" | "netbanking" | "wallet">("upi");
+  const [selectedRewardId, setSelectedRewardId] = useState<string | null>(null);
   const [checkoutState, setCheckoutState] = useState<
     "idle" | "locking" | "ready" | "opening" | "paid"
   >("idle");
@@ -615,6 +608,19 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
   const [bundleRejected, setBundleRejected] = useState(false);
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [rescueResult, setRescueResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getAddresses().then((saved) => {
+      if (!active) return;
+      const selected = saved.find((address) => address.id === preferredAddressId)
+        || saved.find((address) => address.is_default)
+        || saved[0];
+      setAddresses(saved);
+      setSelectedAddressId(selected?.id || null);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [preferredAddressId]);
 
   useEffect(() => {
     let active = true;
@@ -665,119 +671,30 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
           : [],
       );
       const saved = await getAddresses();
+      const selected = saved.find((address) => address.id === preferredAddressId)
+        || saved.find((address) => address.is_default)
+        || saved[0];
       setCheckoutCartId(proposed.id);
       setAddresses(saved);
-      setSelectedAddressId(saved.find((address) => address.is_default)?.id || saved[0]?.id || null);
-      setShowAddressForm(!saved.length);
+      setSelectedAddressId(selected?.id || null);
       onScope({ cartId: proposed.id, orderId: null });
-      setCheckoutStep("address");
+      if (!selected) {
+        setCheckoutStep("address");
+        setCheckoutError("Choose or add a delivery address in Niyam chat first.");
+      } else {
+        const quote = await confirmDelivery(proposed.id, selected.id);
+        const paymentOffers = await getPaymentOffers(proposed.id);
+        setDeliveryQuote(quote);
+        setOffers(paymentOffers.items);
+        setBestOfferKey(paymentOffers.best_offer_key);
+        setSelectedOfferKey(paymentOffers.best_offer_key);
+        setCheckoutStep("offer");
+      }
       setCheckoutState("idle");
     } catch (error) {
       setCheckoutState("idle");
       const message = error instanceof Error ? error.message : "Checkout could not begin.";
       setCheckoutError(message);
-    }
-  };
-
-  const storeAddress = async () => {
-    setCheckoutState("locking");
-    setCheckoutError(null);
-    try {
-      const saved = await saveAddress({ ...addressDraft, landmark: addressDraft.landmark || null });
-      setAddresses((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      setSelectedAddressId(saved.id);
-      setShowAddressForm(false);
-    } catch (error) {
-      setCheckoutError(error instanceof Error ? error.message : "Address could not be saved.");
-    } finally {
-      setCheckoutState("idle");
-    }
-  };
-
-  const useCurrentLocation = () => {
-    setLocationMessage("Requesting browser location permission…");
-    navigator.geolocation.getCurrentPosition(({ coords }) => {
-      setPendingCoordinates({ latitude: coords.latitude, longitude: coords.longitude });
-      setAddressDraft((draft) => ({
-        ...draft,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-      }));
-      setLocationMessage(
-        "Location detected. Choose whether to share it with OpenStreetMap for an approximate address.",
-      );
-    }, () => setLocationMessage("Location permission was not granted. Choose or add an address."));
-  };
-
-  const lookupCurrentAddress = async () => {
-    if (!pendingCoordinates) return;
-    setLocationMessage("Finding an approximate address…");
-    try {
-      const found = await reverseGeocode(
-        pendingCoordinates.latitude,
-        pendingCoordinates.longitude,
-        true,
-      );
-      setAddressDraft((draft) => ({
-        ...draft,
-        ...found,
-        label: "Current",
-        latitude: pendingCoordinates.latitude,
-        longitude: pendingCoordinates.longitude,
-      }));
-      setShowAddressForm(true);
-      setPendingCoordinates(null);
-      setLocationMessage(
-        "Approximate address found. Add the house number or landmark and confirm every field.",
-      );
-    } catch (error) {
-      setShowAddressForm(true);
-      setLocationMessage(
-        error instanceof Error ? error.message : "Address lookup failed. Complete it manually.",
-      );
-    }
-  };
-
-  const toggleAddressVoice = async () => {
-    if (addressVoiceRecording) {
-      addressRecorderRef.current?.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      addressStreamRef.current = stream;
-      addressRecorderRef.current = recorder;
-      addressChunksRef.current = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) addressChunksRef.current.push(event.data); };
-      recorder.onstop = async () => {
-        setAddressVoiceRecording(false);
-        addressStreamRef.current?.getTracks().forEach((track) => track.stop());
-        try {
-          const transcript = await transcribeVoice(new Blob(addressChunksRef.current, { type: recorder.mimeType || "audio/webm" }));
-          const command = `${transcript.transcript} ${transcript.normalized_text}`.toLowerCase();
-          const saved = addresses.find((item) => command.includes(item.label.toLowerCase()));
-          if (saved) {
-            setSelectedAddressId(saved.id);
-            setAddressVoiceMessage(`${saved.label} selected from voice. Tap confirm after checking the summary.`);
-          } else if (command.includes("current location") || command.includes("my location")) {
-            setAddressVoiceMessage("Current location requested by voice. Browser permission is still required.");
-            useCurrentLocation();
-          } else if (command.includes("new address") || command.includes("add address")) {
-            setShowAddressForm(true);
-            setAddressVoiceMessage("New address form opened. Enter the full address and confirm it.");
-          } else {
-            setAddressVoiceMessage(`Heard “${transcript.transcript}”. Say a saved label such as Home or Work.`);
-          }
-        } catch (error) {
-          setAddressVoiceMessage(error instanceof Error ? error.message : "Voice address could not be understood.");
-        }
-      };
-      recorder.start();
-      setAddressVoiceRecording(true);
-      setAddressVoiceMessage("Listening for Home, Work, current location, or new address…");
-    } catch {
-      setAddressVoiceMessage("Microphone permission was not granted. Select the address below.");
     }
   };
 
@@ -792,6 +709,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
       setOffers(paymentOffers.items);
       setBestOfferKey(paymentOffers.best_offer_key);
       setSelectedOfferKey(paymentOffers.best_offer_key);
+      onPreferredAddressChange(selectedAddressId);
       setCheckoutStep("offer");
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : "Delivery could not be confirmed.");
@@ -805,7 +723,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
     setCheckoutState("locking");
     setCheckoutError(null);
     try {
-      await selectPaymentOffer(checkoutCartId, selectedOfferKey);
+      await selectPaymentOffer(checkoutCartId, selectedOfferKey, selectedPaymentMethod);
       const frozen = await finalizeCheckoutCart(checkoutCartId);
       setApproval(frozen);
       setCheckoutStep("approval");
@@ -838,6 +756,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
         whatsappStatus: whatsappOptIn ? "Review message prepared" : "Not requested",
       });
       setCheckoutState("paid");
+      onPaymentComplete();
       if (whatsappOptIn && whatsappState) {
         try {
           const confirmation = await prepareWhatsAppConfirmation(
@@ -900,11 +819,17 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
     }
   };
 
+  const selectedOffer = offers.find((offer) => offer.key === selectedOfferKey);
+  const displayTotal = selectedOffer?.expected_payable_paise
+    ?? approval?.total_paise
+    ?? subtotal + (deliveryQuote?.delivery_paise || 0);
+
   return (
     <div className="drawer-layer">
       <button className="drawer-backdrop" onClick={close} aria-label="Close cart" />
       <aside className="cart-drawer">
         <div className="drawer-header"><div><span className="kicker">YOUR SELECTION</span><h2>Review cart</h2></div><button onClick={close}><X size={21} /></button></div>
+        {checkoutState === "paid" && receipt ? <div className="paid-cart-state"><div className="paid-celebration"><span><Check size={24} /></span><div><small>ORDER CONFIRMED</small><h3>Your payment is verified</h3><p>The purchased products have been removed from your active cart.</p></div></div><PaymentReceiptCard receipt={receipt} whatsappState={whatsappState} /><div className="paid-cart-actions"><Link href="/orders">View My Orders <ArrowRight size={15} /></Link><button onClick={close}>Continue shopping</button></div></div> : <>
         <div className="cart-lines">
           {!lines.length && <div className="empty-cart"><ShoppingBag size={32} /><h3>Your cart is empty</h3><p>Add a product or ask Niyam to build a cart for you.</p></div>}
           {lines.map(({ product, quantity }) => (
@@ -914,6 +839,7 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               <strong>{formatMoney(product.pricePaise * quantity)}</strong>
             </div>
           ))}
+          {!!addresses.length && checkoutStep === "cart" && <div className="cart-delivery-bar"><span><b>Deliver to</b><small>Change anytime before cart lock</small></span><select aria-label="Cart delivery address" value={selectedAddressId || ""} onChange={(event) => { setSelectedAddressId(event.target.value); onPreferredAddressChange(event.target.value); }}><option value="" disabled>Select address</option>{addresses.map((address) => <option value={address.id} key={address.id}>{address.label}{address.is_default ? " · Default" : ""} — {address.locality}, {address.city}</option>)}</select><button onClick={onManageAddress}>Manage</button></div>}
           {!!lines.length && !approval && (
             <GrowthBundleCard
               primary={addonPrimary}
@@ -930,37 +856,14 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               }}
             />
           )}
-          {checkoutStep === "address" && (
-            <section className="checkout-step-card">
-              <div className="step-title"><span>1</span><div><b>Where should we deliver?</b><small>Choose first; delivery can change the final total and ETA.</small></div></div>
-              <div className="address-options">
-                {addresses.map((address) => <label className={selectedAddressId === address.id ? "selected" : ""} key={address.id}><input type="radio" name="delivery-address" checked={selectedAddressId === address.id} onChange={() => setSelectedAddressId(address.id)} /><span><b>{address.label}{address.is_default ? " · Default" : ""}</b><small>{address.locality}, {address.city} · {address.pincode.slice(0, 3)}***</small></span></label>)}
-              </div>
-              <div className="address-actions"><button onClick={() => setShowAddressForm((value) => !value)}><Plus size={14} /> Add new</button><button onClick={useCurrentLocation}><Hash size={14} /> Use current location</button><button onClick={() => void toggleAddressVoice()}>{addressVoiceRecording ? <Square size={13} fill="currentColor" /> : <Mic size={14} />}{addressVoiceRecording ? " Stop" : " Speak address"}</button></div>
-              <small className="voice-address-note">Say “deliver to Home/Work” in any supported language. Voice selects only; it never confirms silently.</small>
-              {addressVoiceMessage && <small className="location-message">{addressVoiceMessage}</small>}
-              {locationMessage && <small className="location-message">{locationMessage}</small>}
-              {pendingCoordinates && <div className="location-consent"><ShieldCheck size={16} /><p><b>Share location with OpenStreetMap?</b><small>Only latitude and longitude are sent to Nominatim to find an approximate address. They are not sent to the shopping LLM or written to the audit trail.</small></p><button onClick={() => void lookupCurrentAddress()}>Find address</button><button onClick={() => { setPendingCoordinates(null); setShowAddressForm(true); setLocationMessage("Coordinates were not shared. Enter the address manually."); }}>Enter manually</button></div>}
-              {showAddressForm && <div className="address-form">
-                <input aria-label="Address label" placeholder="Home / Work" value={addressDraft.label} onChange={(event) => setAddressDraft({ ...addressDraft, label: event.target.value })} />
-                <input aria-label="Recipient name" placeholder="Recipient name" value={addressDraft.recipient_name} onChange={(event) => setAddressDraft({ ...addressDraft, recipient_name: event.target.value })} />
-                <input aria-label="Phone" placeholder="+919876543210" value={addressDraft.phone} onChange={(event) => setAddressDraft({ ...addressDraft, phone: event.target.value })} />
-                <input aria-label="House and building" placeholder="Flat / house / building" value={addressDraft.line1} onChange={(event) => setAddressDraft({ ...addressDraft, line1: event.target.value })} />
-                <input aria-label="Locality" placeholder="Street / locality" value={addressDraft.locality} onChange={(event) => setAddressDraft({ ...addressDraft, locality: event.target.value })} />
-                <input aria-label="Landmark" placeholder="Landmark (optional)" value={addressDraft.landmark} onChange={(event) => setAddressDraft({ ...addressDraft, landmark: event.target.value })} />
-                <input aria-label="City" placeholder="City" value={addressDraft.city} onChange={(event) => setAddressDraft({ ...addressDraft, city: event.target.value })} />
-                <input aria-label="State" placeholder="State" value={addressDraft.state} onChange={(event) => setAddressDraft({ ...addressDraft, state: event.target.value })} />
-                <input aria-label="Pincode" placeholder="6-digit pincode" value={addressDraft.pincode} onChange={(event) => setAddressDraft({ ...addressDraft, pincode: event.target.value.replace(/\D/g, "").slice(0, 6) })} />
-                <button className="save-address" onClick={() => void storeAddress()}>Save and select address</button>
-              </div>}
-              <button className="step-primary" onClick={() => void confirmAddress()} disabled={!selectedAddressId || checkoutState === "locking"}>{checkoutState === "locking" ? "Checking delivery…" : "Confirm address & check delivery"}<ArrowRight size={15} /></button>
-            </section>
-          )}
+          {checkoutStep === "address" && <section className="checkout-step-card compact-address-card"><div className="step-title"><span>1</span><div><b>Delivery address</b><small>Manage full addresses and voice selection inside Niyam chat.</small></div></div>{!!addresses.length && <select aria-label="Delivery address" value={selectedAddressId || ""} onChange={(event) => { setSelectedAddressId(event.target.value); onPreferredAddressChange(event.target.value); }}><option value="" disabled>Select an address</option>{addresses.map((address) => <option value={address.id} key={address.id}>{address.label}{address.is_default ? " · Default" : ""} — {address.locality}, {address.city} · {address.pincode.slice(0, 3)}***</option>)}</select>}<button className="manage-address-link" onClick={onManageAddress}>Manage addresses in Niyam chat</button>{selectedAddressId && <button className="step-primary" onClick={() => void confirmAddress()} disabled={checkoutState === "locking"}>{checkoutState === "locking" ? "Checking delivery…" : "Use this address"}<ArrowRight size={15} /></button>}</section>}
           {checkoutStep === "offer" && deliveryQuote && (
             <section className="checkout-step-card">
-              <div className="delivery-confirmed"><Check size={15} /><span><b>{deliveryQuote.address_label} confirmed · {deliveryQuote.city} {deliveryQuote.masked_pincode}</b><small>{deliveryQuote.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free delivery"} · {deliveryQuote.eta_min_days}–{deliveryQuote.eta_max_days} days</small></span></div>
-              <div className="step-title"><span>2</span><div><b>Choose your best payment option</b><small>Only merchant-approved Razorpay test offers are selectable.</small></div></div>
-              <div className="offer-options">{offers.map((offer) => <label className={`${selectedOfferKey === offer.key ? "selected" : ""} ${!offer.provider_configured || !offer.eligible ? "disabled" : ""}`} key={offer.key}><input type="radio" name="payment-offer" checked={selectedOfferKey === offer.key} disabled={!offer.provider_configured || !offer.eligible} onChange={() => setSelectedOfferKey(offer.key)} /><span><b>{offer.title}{offer.key === bestOfferKey ? " · Best saving" : ""}</b><small>{offer.reason}</small><em>{offer.savings_paise ? `Save ${formatMoney(offer.savings_paise)} · Pay ${formatMoney(offer.expected_payable_paise)}` : "No automatic discount"}</em></span></label>)}</div>
+              <div className="delivery-confirmed"><Check size={15} /><span><b>{deliveryQuote.address_label} confirmed · {deliveryQuote.city} {deliveryQuote.masked_pincode}</b><small>{deliveryQuote.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free delivery"} · {deliveryQuote.eta_min_days}–{deliveryQuote.eta_max_days} days</small></span><button onClick={() => setCheckoutStep("address")}>Change</button></div>
+              <div className="step-title"><span>2</span><div><b>Best eligible offer applied</b><small>Niyam selects the largest real saving. You can choose any other eligible coupon.</small></div></div>
+              <div className="offer-options">{offers.map((offer) => <label className={`${selectedOfferKey === offer.key ? "selected" : ""} ${!offer.provider_configured || !offer.eligible ? "disabled" : ""}`} key={offer.key}><input type="radio" name="payment-offer" checked={selectedOfferKey === offer.key} disabled={!offer.provider_configured || !offer.eligible} onChange={() => setSelectedOfferKey(offer.key)} /><span><b>{offer.title}{offer.key === bestOfferKey && offer.savings_paise > 0 ? " · Best applicable saving" : ""}</b><small>{offer.reason}</small><em>{offer.savings_paise ? `Save ${formatMoney(offer.savings_paise)} · Pay ${formatMoney(offer.expected_payable_paise)}` : "Pay the regular cart total"}</em></span></label>)}</div>
+              <div className="payment-method-choices"><b>How would you prefer to pay?</b><small>Choose a preference now; Razorpay performs the final instrument selection and authentication.</small><div>{([['upi','UPI','Fastest'],['card','Credit / debit card','Bank rewards'],['netbanking','Netbanking','Choose your bank'],['wallet','Wallet','Supported wallets']] as const).map(([key, title, note]) => <button className={selectedPaymentMethod === key ? "selected" : ""} onClick={() => setSelectedPaymentMethod(key)} key={key}><span>{title}</span><small>{note}</small>{selectedPaymentMethod === key && <Check size={14} />}</button>)}</div></div>
+              <PaymentRewardPicker amountPaise={selectedOffer?.expected_payable_paise ?? subtotal} selectedId={selectedRewardId} onSelect={(reward) => { setSelectedRewardId(reward.id); setSelectedPaymentMethod(reward.type); }} />
               <button className="step-primary" onClick={() => void lockFinalCart()} disabled={checkoutState === "locking"}>{checkoutState === "locking" ? "Locking exact cart…" : "Confirm choice & lock final cart"}<ArrowRight size={15} /></button>
             </section>
           )}
@@ -968,12 +871,13 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
         {!!lines.length && <div className="cart-summary">
           <div><span>Subtotal</span><b>{formatMoney(subtotal)}</b></div>
           <div><span>Delivery</span><b className="free">{deliveryQuote?.delivery_paise ? formatMoney(deliveryQuote.delivery_paise) : "Free"}</b></div>
-          <div className="total-line"><span>Total</span><strong>{formatMoney(approval?.total_paise ?? subtotal + (deliveryQuote?.delivery_paise || 0))}</strong></div>
+          {selectedOffer?.savings_paise ? <div className="discount-line"><span>Offer saving</span><b>−{formatMoney(selectedOffer.savings_paise)}</b></div> : null}
+          <div className="total-line"><span>Final payable</span><strong>{formatMoney(displayTotal)}</strong></div>
           <div className="approval-box"><ShieldCheck size={19} /><p><b>You remain in control</b><small>We’ll lock and show the exact cart again before opening Razorpay test checkout.</small></p></div>
           {approval && checkoutState !== "paid" && (
             <div className="exact-approval">
               <span>Exact cart awaiting your approval</span>
-              <b>{formatMoney(approval.total_paise)}</b>
+              <b>{formatMoney(displayTotal)}</b>
               <code title={approval.cart_hash}>{approval.cart_hash}</code>
               <small>
                 Locked until {new Date(
@@ -993,22 +897,21 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope }: { l
               {whatsappError && <small className="checkout-error" role="alert">{whatsappError}</small>}
             </div>
           )}
-          {checkoutState === "paid" && receipt ? (
-            <PaymentReceiptCard receipt={receipt} whatsappState={whatsappState} />
-          ) : approval ? (
+          {approval ? (
             <button className="checkout-button" onClick={approveAndPay} disabled={checkoutState === "opening"}>
               {checkoutState === "opening" ? "Opening secure checkout…" : "Approve exact cart & pay"}
               <ArrowRight size={18} />
             </button>
           ) : (
             <button className="checkout-button" onClick={beginDelivery} disabled={checkoutState === "locking" || checkoutStep !== "cart"}>
-              {checkoutState === "locking" ? "Starting secure checkout…" : checkoutStep === "cart" ? "Continue to delivery" : "Complete the step above"}
+              {checkoutState === "locking" ? "Preparing checkout…" : checkoutStep === "cart" ? "Continue to offers" : "Complete the step above"}
               <ArrowRight size={18} />
             </button>
           )}
           {checkoutError && <p className="checkout-error" role="alert">{checkoutError}{checkoutError.toLowerCase().includes("sign in") && <Link href={`/auth?next=${encodeURIComponent("/#shop")}`}>Sign in to continue</Link>}</p>}
           <small className="test-mode" aria-live="polite">Razorpay test mode · No real money charged</small>
         </div>}
+        </>}
       </aside>
     </div>
   );
