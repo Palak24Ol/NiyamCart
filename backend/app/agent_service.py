@@ -53,6 +53,7 @@ class AgentConfig:
     max_steps: int = 8
     max_revisions: int = 8
     max_cost_microusd: int = 3000
+    request_timeout_seconds: float = 15.0
 
     @classmethod
     def from_env(cls) -> AgentConfig:
@@ -95,18 +96,32 @@ class AgentProvider(Protocol):
 
 
 class OpenAIResponsesProvider:
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        *,
+        instructions: str = SYSTEM_INSTRUCTIONS,
+        tool_definitions: list[dict[str, object]] | None = None,
+    ) -> None:
         from openai import OpenAI
 
         self.config = config
-        self.client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        self.instructions = instructions
+        self.tool_definitions = (
+            tool_definitions if tool_definitions is not None else TOOL_DEFINITIONS
+        )
+        self.client = OpenAI(
+            api_key=os.environ["OPENAI_API_KEY"],
+            timeout=config.request_timeout_seconds,
+            max_retries=0,
+        )
 
     def respond(self, input_items: list[dict[str, object]]) -> ProviderTurn:
         response = self.client.responses.create(
             model=self.config.model,
-            instructions=SYSTEM_INSTRUCTIONS,
+            instructions=self.instructions,
             input=input_items,
-            tools=TOOL_DEFINITIONS,
+            tools=self.tool_definitions,
             tool_choice="auto",
             parallel_tool_calls=False,
             reasoning={"effort": self.config.reasoning_effort},
@@ -134,7 +149,7 @@ class OpenAIResponsesProvider:
         )
 
 
-def _chat_tools() -> list[dict[str, object]]:
+def _chat_tools(definitions: list[dict[str, object]] | None = None) -> list[dict[str, object]]:
     return [
         {
             "type": "function",
@@ -144,12 +159,14 @@ def _chat_tools() -> list[dict[str, object]]:
                 "parameters": tool["parameters"],
             },
         }
-        for tool in TOOL_DEFINITIONS
+        for tool in (definitions if definitions is not None else TOOL_DEFINITIONS)
     ]
 
 
-def _chat_messages(input_items: list[dict[str, object]]) -> list[dict[str, object]]:
-    messages: list[dict[str, object]] = [{"role": "system", "content": SYSTEM_INSTRUCTIONS}]
+def _chat_messages(
+    input_items: list[dict[str, object]], instructions: str = SYSTEM_INSTRUCTIONS
+) -> list[dict[str, object]]:
+    messages: list[dict[str, object]] = [{"role": "system", "content": instructions}]
     for item in input_items:
         if item.get("role") in {"user", "assistant"}:
             messages.append(
@@ -178,20 +195,32 @@ def _chat_messages(input_items: list[dict[str, object]]) -> list[dict[str, objec
 
 
 class GroqChatProvider:
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        *,
+        instructions: str = SYSTEM_INSTRUCTIONS,
+        tool_definitions: list[dict[str, object]] | None = None,
+    ) -> None:
         from openai import OpenAI
 
         self.config = config
+        self.instructions = instructions
+        self.tool_definitions = (
+            tool_definitions if tool_definitions is not None else TOOL_DEFINITIONS
+        )
         self.client = OpenAI(
             api_key=os.environ["GROQ_API_KEY"],
             base_url="https://api.groq.com/openai/v1",
+            timeout=config.request_timeout_seconds,
+            max_retries=0,
         )
 
     def respond(self, input_items: list[dict[str, object]]) -> ProviderTurn:
         response = self.client.chat.completions.create(
             model=self.config.model,
-            messages=_chat_messages(input_items),  # type: ignore[arg-type]
-            tools=_chat_tools(),  # type: ignore[arg-type]
+            messages=_chat_messages(input_items, self.instructions),  # type: ignore[arg-type]
+            tools=_chat_tools(self.tool_definitions),  # type: ignore[arg-type]
             tool_choice="auto",
             parallel_tool_calls=False,
             temperature=0,

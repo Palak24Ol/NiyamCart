@@ -55,7 +55,7 @@ def load_cart(session: Session, cart_id: str) -> Cart:
     return cart
 
 
-def create_cart(session: Session, request: CreateCartRequest) -> Cart:
+def create_cart(session: Session, request: CreateCartRequest, *, commit: bool = True) -> Cart:
     product_ids = [item.product_id for item in request.items]
     products = {
         product.id: product
@@ -147,7 +147,10 @@ def create_cart(session: Session, request: CreateCartRequest) -> Cart:
             ],
         },
     )
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return load_cart(session, cart.id)
 
 
@@ -190,6 +193,9 @@ def _cart_validation_error(session: Session, cart: Cart) -> CommerceError | None
 
 
 def _invalidate_if_changed(session: Session, cart: Cart) -> None:
+    from .journey_service import enforce_journey_constraints
+
+    enforce_journey_constraints(session, cart)
     error = _cart_validation_error(session, cart)
     if error is not None:
         cart.status = "invalidated"

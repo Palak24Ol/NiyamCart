@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { SavedJourneyBaskets } from "@/components/SavedJourneyBaskets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMoney, formatSpecLabel, products, searchProducts, type Product } from "@/lib/catalog";
 import {
@@ -330,6 +331,7 @@ export function NiyamCartApp() {
           <a className="active" href="#shop">Shop</a>
           <a href="#agent">AI assistant</a>
           <Link href="/orders">My orders</Link>
+          <Link href="/journey">My journey</Link>
           <Link href="/profile">Profile</Link>
           <Link href="/growth">Growth ledger</Link>
         </nav>
@@ -495,6 +497,7 @@ function ProductCard({ product, quantity, updateCart, onOpen }: { product: Produ
       <div className="product-visual" style={{ background: product.accent }}>
         {product.badge && <span className="product-badge">{product.badge}</span>}
         <img className="product-image" src={product.image} alt={product.name} loading="lazy" />
+        <span className="product-demo-label">Synthetic demo</span>
       </div>
       <div className="product-info">
         <span className="product-category">{product.category}</span>
@@ -889,7 +892,8 @@ function CartDrawer({ lines, subtotal, updateCart, onOpen, close, onScope, prefe
         <div className="drawer-header"><div><span className="kicker">YOUR SELECTION</span><h2>Review cart</h2></div><button onClick={close}><X size={21} /></button></div>
         {checkoutState === "paid" && receipt ? <div className="paid-cart-state"><div className="paid-celebration"><span><Check size={24} /></span><div><small>ORDER CONFIRMED</small><h3>Your payment is verified</h3><p>The purchased products have been removed from your active cart.</p></div></div><PaymentReceiptCard receipt={receipt} whatsappState={whatsappState} /><div className="paid-cart-actions"><Link href="/orders">View My Orders <ArrowRight size={15} /></Link><button onClick={close}>Continue shopping</button></div></div> : <>
         <div className="cart-lines">
-          {!lines.length && <div className="empty-cart"><ShoppingBag size={32} /><h3>Your cart is empty</h3><p>Add a product or ask Niyam to build a cart for you.</p></div>}
+          <SavedJourneyBaskets />
+          {!lines.length && <div className="empty-cart"><ShoppingBag size={32} /><h3>No manually added items</h3><p>Continue a prepared basket above, or add products from the shop.</p></div>}
           {lines.map(({ product, quantity }) => (
             <div className="cart-line" key={product.id}>
               <span className="line-visual" style={{ background: product.accent }}><img src={product.image} alt="" /></span>

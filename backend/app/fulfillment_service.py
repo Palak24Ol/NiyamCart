@@ -85,6 +85,13 @@ def confirm_cart_delivery(
     if not confirmed:
         raise CommerceError(422, "ADDRESS_CONFIRMATION_REQUIRED", "Confirm the address first")
     cart = load_cart(db, cart_id)
+    from .journey_models import JourneyCart
+
+    journey = db.get(JourneyCart, cart_id)
+    if (journey and journey.customer_id != customer.id) or (
+        cart.fulfillment and cart.fulfillment.customer_id != customer.id
+    ):
+        raise CommerceError(403, "CART_NOT_OWNED", "This cart belongs to another account")
     if cart.status != "proposed":
         raise CommerceError(
             409,

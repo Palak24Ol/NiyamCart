@@ -6,8 +6,10 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urlencode
 
 import httpx
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -97,6 +99,17 @@ class RazorpayHttpGateway:
             )
             response.raise_for_status()
             body = response.json()
+        except httpx.HTTPStatusError as error:
+            status = error.response.status_code
+            message = (
+                "Razorpay rejected the test credentials. Check the running backend's test key pair."
+                if status in {401, 403}
+                else "Razorpay rejected the checkout request. "
+                "Check the selected offer and test configuration."
+                if status == 400
+                else "Razorpay is temporarily unavailable. Retry this same basket after a moment."
+            )
+            raise RazorpayError(503, f"RAZORPAY_HTTP_{status}", message) from error
         except (httpx.HTTPError, ValueError) as error:
             raise RazorpayError(
                 503,
@@ -110,10 +123,21 @@ class RazorpayHttpGateway:
     def create_order(self, payload: dict[str, object]) -> dict[str, object]:
         return self._request("POST", "/orders", payload=payload)
 
+    def fetch_orders_by_receipt(self, receipt: str) -> dict[str, object]:
+        return self._request("GET", "/orders?" + urlencode({"receipt": receipt, "count": 100}))
+
     def fetch_payment(self, payment_id: str) -> dict[str, object]:
         if not payment_id.startswith("pay_") or not payment_id.replace("_", "").isalnum():
             raise RazorpayError(422, "INVALID_PAYMENT_ID", "Invalid Razorpay payment ID")
         return self._request("GET", f"/payments/{payment_id}")
+
+    def fetch_order_payments(self, provider_order_id: str) -> dict[str, object]:
+        if (
+            not provider_order_id.startswith("order_")
+            or not provider_order_id.replace("_", "").isalnum()
+        ):
+            raise RazorpayError(422, "INVALID_ORDER_ID", "Invalid Razorpay order ID")
+        return self._request("GET", f"/orders/{provider_order_id}/payments")
 
     def verify_checkout_signature(
         self, provider_order_id: str, payment_id: str, signature: str
@@ -181,18 +205,54 @@ def create_razorpay_checkout(
         raise RazorpayError(409, "INVALID_ORDER_STATE", "Only pending orders can open checkout")
 
     existing = db.get(RazorpayCheckout, order.id)
+    recovered_provider_order = None
     if existing is not None:
         if existing.state == "ready":
             return _checkout_response(existing, gateway)
         if existing.state == "creating":
             raise RazorpayError(409, "CHECKOUT_IN_PROGRESS", "Checkout creation is in progress")
-        raise RazorpayError(
-            503,
-            "CHECKOUT_CREATION_FAILED",
-            "The earlier provider-order result is uncertain; manual review is required",
+        fetch = getattr(gateway, "fetch_orders_by_receipt", None)
+        if fetch is None:
+            raise RazorpayError(
+                503,
+                "CHECKOUT_CREATION_FAILED",
+                "The earlier provider-order result is uncertain; manual review is required",
+            )
+        collection = fetch(existing.receipt)
+        items = collection.get("items") if isinstance(collection, dict) else None
+        if (
+            not isinstance(items, list)
+            or collection.get("count") != len(items)
+            or len(items) >= 100
+            or any(not isinstance(p, dict) for p in items)
+        ):
+            raise RazorpayError(
+                502,
+                "CHECKOUT_LOOKUP_INCOMPLETE",
+                "Provider order lookup was incomplete; retry blocked",
+            )
+        matches = [p for p in items if p.get("receipt") == existing.receipt]
+        if len(matches) > 1:
+            raise RazorpayError(
+                409, "CHECKOUT_LOOKUP_AMBIGUOUS", "Multiple provider orders need merchant review"
+            )
+        recovered_provider_order = matches[0] if matches else None
+        claim = db.execute(
+            update(RazorpayCheckout)
+            .where(
+                RazorpayCheckout.order_id == order.id,
+                RazorpayCheckout.state == "failed",
+            )
+            .values(state="creating", failure_code=None)
         )
+        db.commit()
+        if claim.rowcount != 1:
+            raise RazorpayError(
+                409, "CHECKOUT_IN_PROGRESS", "Another checkout retry is in progress"
+            )
+        db.refresh(existing)
 
-    checkout = RazorpayCheckout(
+    checkout = existing or RazorpayCheckout(
         order_id=order.id,
         state="creating",
         receipt=f"nc-{order.id}",
@@ -240,7 +300,7 @@ def create_razorpay_checkout(
         request_payload["force_offer"] = True
         request_payload["notes"]["selected_offer_key"] = selected_offer.offer_key
     try:
-        provider_order = gateway.create_order(request_payload)
+        provider_order = recovered_provider_order or gateway.create_order(request_payload)
         provider_order_id = provider_order.get("id")
         valid = (
             isinstance(provider_order_id, str)
@@ -248,7 +308,8 @@ def create_razorpay_checkout(
             and provider_order.get("amount") == checkout.amount_paise
             and provider_order.get("currency") == checkout.currency
             and provider_order.get("receipt") == checkout.receipt
-            and provider_order.get("status") == "created"
+            and provider_order.get("status")
+            in ({"created", "attempted"} if recovered_provider_order else {"created"})
         )
         if not valid:
             raise RazorpayError(

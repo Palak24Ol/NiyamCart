@@ -85,9 +85,16 @@ a { color: inherit; text-decoration: none; }
 .product-card { background: white; border: 1px solid #e6e8e3; border-radius: 18px; overflow: hidden; transition: transform .2s, box-shadow .2s; cursor: pointer; }
 .product-card:hover { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(20,34,29,.09); }
 .product-card:focus-visible { outline: 3px solid rgba(47,111,82,.3); outline-offset: 3px; }
-.product-visual { height: 205px; display: grid; place-items: center; position: relative; overflow: hidden; }
+.product-visual { height: auto; aspect-ratio: 3 / 4; display: block; position: relative; overflow: hidden; }
 .product-visual:after { content: ""; position: absolute; width: 145px; height: 145px; border: 1px solid rgba(20,34,29,.09); border-radius: 50%; }
-.product-image { width: 100%; height: 100%; object-fit: cover; z-index: 1; transition: transform .3s ease; }
+.product-image { position: absolute; width: 177.78%; max-width: none; height: 166.67%; left: -38.89%; top: -25%; object-fit: fill; z-index: 1; transition: transform .3s ease; }
+.product-demo-label { position: absolute; z-index: 2; bottom: 12px; left: 12px; padding: 5px 9px; border-radius: 6px; background: rgba(255,255,255,.92); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.saved-journey-baskets { margin-bottom: 24px; }
+.saved-journey-baskets > p { color: #63716a; font-size: 13px; line-height: 1.5; }
+.saved-journey-baskets article { border: 1px solid #d6e2d8; border-radius: 12px; padding: 16px; margin-top: 12px; background: #f7faf6; }
+.saved-journey-baskets article p { margin: 8px 0; }
+.saved-journey-baskets article small { color: #43684d; text-transform: capitalize; }
+.saved-journey-baskets article a { display: block; margin-top: 12px; color: #176b4c; font-weight: 600; }
 .product-card:hover .product-image { transform: scale(1.035); }
 .product-badge { position: absolute; left: 13px; top: 13px; z-index: 2; padding: 5px 9px; background: rgba(255,255,255,.9); border-radius: 7px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; }
 .product-info { padding: 18px; }
@@ -499,7 +506,7 @@ a { color: inherit; text-decoration: none; }
   .section-heading > p { margin-top: 12px; }
   .category-tabs { max-width: calc(100% - 115px); }
   .product-grid { grid-template-columns: 1fr; }
-  .product-visual { height: 220px; }
+  .product-visual { height: auto; }
   .how-section { padding: 70px 20px; }
   .steps { grid-template-columns: 1fr; }
   .agent-panel { right: 8px; left: 8px; bottom: 73px; width: auto; max-height: calc(100vh - 90px); }

@@ -73,6 +73,18 @@ The frontend calls the bounded agent API directly. Shopper chat shows grounded p
 refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and
 hash-chain verification for judges without exposing hidden model reasoning.
 
+## Persistent buyer journey
+
+Open **My journey** from the navigation for saved shopping missions, opt-in buyer memory,
+price/stock watches, checkout recovery, reorder reminders, and the external buyer quote demo.
+**My Orders** now reads account-scoped backend orders and includes tracking, verified receipts,
+an aftercare assistant and reviewable support/return/exchange requests. Profiles sync across devices.
+
+See `docs/buyer-journey.md` for worker behaviour, the signed merchant tracking integration,
+the independent buyer client, test coverage and explicit integration limits. Carrier estimates
+remain catalogue estimates until a merchant adapter supplies events. Return/exchange submissions
+enter a local merchant review queue; no real refund or replacement is fabricated.
+
 ## Run locally
 
 Requirements: Node.js 20 or newer and Python 3.11 or newer.

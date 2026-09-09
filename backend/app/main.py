@@ -1,6 +1,7 @@
+import asyncio
 import os
 from collections.abc import AsyncIterator, Generator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -62,6 +63,9 @@ from .fulfillment_service import (
 )
 from .growth_schemas import GrowthEventRequest, GrowthEventResponse, GrowthLedgerResponse
 from .growth_service import growth_ledger, record_growth_event
+from .journey_models import JourneyCart
+from .journey_routes import install_journey_routes
+from .journey_worker import worker_loop
 from .models import Product
 from .offer_schemas import (
     PaymentOfferListResponse,
@@ -136,7 +140,15 @@ def create_app(
         db.create_schema()
         with db.session_factory() as session:
             seed_catalog(session)
-        yield
+        worker = asyncio.create_task(worker_loop(db)) if os.getenv(
+            "JOURNEY_WORKER_ENABLED", "true").lower() == "true" else None
+        try:
+            yield
+        finally:
+            if worker:
+                worker.cancel()
+                with suppress(asyncio.CancelledError):
+                    await worker
         db.close()
 
     app = FastAPI(
@@ -150,7 +162,7 @@ def create_app(
         allow_origins=[frontend_origin],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-        allow_headers=["content-type"],
+        allow_headers=["content-type", "authorization"],
     )
     app.state.db = db
     app.state.razorpay_gateway = gateway
@@ -203,6 +215,15 @@ def create_app(
 
     def require_customer(request: Request, session: Session):
         return load_customer_from_token(session, request.cookies.get(SESSION_COOKIE))
+
+    def guard_owned_cart(request: Request, session: Session, cart_id: str):
+        cart = load_cart(session, cart_id)
+        link = session.get(JourneyCart, cart_id)
+        owner = link.customer_id if link else (
+            cart.fulfillment.customer_id if cart.fulfillment else None)
+        if owner is not None and require_customer(request, session).id != owner:
+            raise CommerceError(404, "CART_NOT_FOUND", "Cart not found in this account")
+        return cart
 
     def attach_session_cookie(response: Response, token: str, expires_at) -> None:
         response.set_cookie(
@@ -358,15 +379,17 @@ def create_app(
         return create_cart(session, request)
 
     @app.get("/api/carts/{cart_id}", response_model=CartResponse, tags=["commerce"])
-    def get_cart_route(cart_id: str, session: SessionDependency):
-        return load_cart(session, cart_id)
+    def get_cart_route(cart_id: str, request: Request, session: SessionDependency):
+        return guard_owned_cart(request, session, cart_id)
 
     @app.post("/api/carts/{cart_id}/freeze", response_model=CartResponse, tags=["commerce"])
-    def freeze_cart_route(cart_id: str, session: SessionDependency):
+    def freeze_cart_route(cart_id: str, request: Request, session: SessionDependency):
+        guard_owned_cart(request, session, cart_id)
         return freeze_cart(session, cart_id)
 
     @app.post("/api/carts/{cart_id}/finalize", response_model=CartResponse, tags=["commerce"])
     def finalize_checkout_cart(cart_id: str, request: Request, session: SessionDependency):
+        guard_owned_cart(request, session, cart_id)
         customer = require_customer(request, session)
         cart = load_cart(session, cart_id)
         if cart.fulfillment is not None and cart.fulfillment.customer_id != customer.id:
@@ -483,19 +506,25 @@ def create_app(
     def approve_cart_route(
         cart_id: str,
         request: ApproveCartRequest,
+        http_request: Request,
         session: SessionDependency,
     ):
+        guard_owned_cart(http_request, session, cart_id)
         return approve_cart(session, cart_id, request.cart_hash)
 
     @app.post("/api/orders", response_model=OrderResponse, status_code=201, tags=["commerce"])
-    def create_order_route(request: CreateOrderRequest, session: SessionDependency):
+    def create_order_route(
+        request: CreateOrderRequest, http_request: Request, session: SessionDependency
+    ):
+        guard_owned_cart(http_request, session, request.cart_id)
         return create_order(session, request)
 
     @app.get("/api/orders/{order_id}", response_model=OrderResponse, tags=["commerce"])
-    def get_order_route(order_id: str, session: SessionDependency):
+    def get_order_route(order_id: str, request: Request, session: SessionDependency):
         order = session.get(Order, order_id)
         if order is None:
             raise CommerceError(404, "ORDER_NOT_FOUND", "Order not found")
+        guard_owned_cart(request, session, order.cart_id)
         return order
 
     @app.post(
@@ -504,7 +533,10 @@ def create_app(
         status_code=201,
         tags=["payments"],
     )
-    def create_razorpay_checkout_route(order_id: str, session: SessionDependency):
+    def create_razorpay_checkout_route(order_id: str, request: Request, session: SessionDependency):
+        order = session.get(Order, order_id)
+        if order is not None:
+            guard_owned_cart(request, session, order.cart_id)
         return create_razorpay_checkout(session, order_id, app.state.razorpay_gateway)
 
     @app.post(
@@ -781,6 +813,7 @@ def create_app(
             app.state.whatsapp_sender,
         )
 
+    install_journey_routes(app)
     return app
 
 

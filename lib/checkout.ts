@@ -266,8 +266,12 @@ export async function approveAndOpenCheckout(
       idempotency_key: `checkout-${approval.id}`,
     }),
   });
+  return openExistingOrderCheckout(order.id);
+}
+
+export async function openExistingOrderCheckout(orderId: string, resume = false): Promise<PaymentReceipt> {
   const checkout = await api<RazorpayCheckout>(
-    `/api/orders/${order.id}/razorpay-checkout`,
+    resume ? `/api/customer/orders/${orderId}/resume` : `/api/orders/${orderId}/razorpay-checkout`,
     { method: "POST" },
   );
   await loadRazorpayCheckout();
