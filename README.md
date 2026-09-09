@@ -24,9 +24,9 @@ The bounded agent loop, machine contracts, policy engine, cart-hash approval, ha
 flow, verifiable audit, evaluation harness, and safe handoff are new Buildathon work. Exact provenance
 is documented in `ADAPTATION.md`.
 
-## Current checkpoint
+## Implemented features
 
-The clean frontend/backend foundation is implemented with:
+The storefront and backend include:
 
 - Searchable and filterable 500-product catalogue across 10 categories.
 - 500 locally hosted, compressed primary product images.
@@ -64,10 +64,11 @@ The clean frontend/backend foundation is implemented with:
 - Self-healing cart rescue that shows replacements, revokes prior approval, and requires reapproval.
 - Causal Growth Ledger separating exposure, rejection, acceptance, and realised test uplift.
 - Functional login and sign-up with scrypt password hashing and HttpOnly cookie sessions.
-- Protected My Orders and Profile pages with account-scoped browser storage for MVP preferences and receipts.
-- Eight-step, two-revision, and per-session model-cost limits.
+- Protected My Orders and Profile pages with account-scoped, server-backed orders and preferences.
+- Configurable step, revision, and per-session model-cost limits.
 - Repair-once tool validation plus deterministic degraded mode when the model is unavailable.
-- 100 automated tests spanning unit, integration, randomized properties, reliability, and races.
+- Automated tests spanning unit, integration, randomized properties, reliability, account isolation,
+  payment recovery, background-task races, and aftercare.
 
 The frontend calls the bounded agent API directly. Shopper chat shows grounded products, policy
 refusals, and safe degraded states. A separate Trust & Audit drawer shows typed tool activity and
@@ -75,46 +76,90 @@ hash-chain verification for judges without exposing hidden model reasoning.
 
 ## Persistent buyer journey
 
-Open **My journey** from the navigation for saved shopping missions, opt-in buyer memory,
-price/stock watches, checkout recovery, reorder reminders, and the external buyer quote demo.
-**My Orders** now reads account-scoped backend orders and includes tracking, verified receipts,
-an aftercare assistant and reviewable support/return/exchange requests. Profiles sync across devices.
+| Screen | What it does |
+| --- | --- |
+| Shop (`/`) | Search the catalogue, inspect full-height product imagery, add items, and find saved mission/watch baskets in the cart drawer. |
+| My journey (`/journey`) | Save and refine missions, compare complete baskets, manage watches and memory, read updates, and try external buyer quotes. |
+| My orders (`/orders`) | See backend order history, recheck payments, download verified test receipts, ask aftercare questions, and prepare support/return/exchange requests. |
+| Profile (`/profile`) | Save account preferences across devices. |
 
-See `docs/buyer-journey.md` for worker behaviour, the signed merchant tracking integration,
-the independent buyer client, test coverage and explicit integration limits. Carrier estimates
-remain catalogue estimates until a merchant adapter supplies events. Return/exchange submissions
-enter a local merchant review queue; no real refund or replacement is fabricated.
+- **Shopping missions:** up to four item requirements, a delivered-total budget, and an optional
+  arrival deadline. Up to three complete baskets are checked against catalogue stock, prices and
+  delivery estimates. Missing details or unavailable items are explained separately.
+- **Opt-in buyer memory:** preferred brands, usual size/budget and rejected products guide future
+  missions when enabled. Preferences can be cleared; size-specific inventory is not available.
+- **Price and restock watches:** consent-based monitoring prepares a reviewable basket when stock
+  and the delivered-price target match. Pause, resume, check now, stop and expiry are supported.
+- **Checkout recovery:** prepared baskets retain their limits and approval boundary. Pending
+  payments are reconciled before retrying; failed provider-order creation is checked by receipt
+  so an existing provider order can be reused.
+- **Aftercare:** a separate four-tool assistant reads tracking, eligibility and receipts and
+  prepares support drafts. It cannot issue refunds, submit requests or charge the buyer.
+- **Returns and exchanges:** eligibility and replacement stock are checked before a draft is
+  submitted to a local merchant-review queue. No refund or replacement shipment is fabricated.
+- **Repeat purchases:** scheduled reminders prepare a fresh basket within the original total;
+  the buyer must review and approve each purchase.
+- **External buyer handoff:** a temporary, revocable 15-minute key grants quote-only access.
+  The in-app demo and independent reference client discover catalogue/policy contracts and return
+  an account-protected basket-review link. They cannot approve or pay.
+
+Saved baskets stay separate from manually added items to preserve each basket's budget and exact
+approval. Watch/reorder notifications are in-app, not automatic email or WhatsApp messages.
+
+See [the buyer journey guide](docs/buyer-journey.md) for worker behaviour, merchant tracking,
+the independent buyer client, test coverage and integration limits.
 
 ## Run locally
 
 Requirements: Node.js 20 or newer and Python 3.11 or newer.
+
+From the repository root, copy `.env.example` to `.env` only if you do not already have one.
+Fill in the server-side test/provider credentials you need. Never commit `.env`.
+
+Start the backend in Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --port 8000
+```
+
+On macOS/Linux, use `.venv/bin/python` instead of `.\.venv\Scripts\python.exe`.
+In a second terminal, start the frontend:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-Create and start the backend in a second terminal:
-
-```bash
-python -m venv .venv
-python -m pip install -r backend/requirements-dev.txt
-python -m uvicorn app.main:app --app-dir backend --reload --port 8000
-```
+Open `http://localhost:3000`. The browser API base defaults to `http://localhost:8000`;
+set `NEXT_PUBLIC_API_BASE_URL` if your backend uses another address, and set `FRONTEND_ORIGIN`
+on the backend to the matching frontend origin. Restart/rebuild after changing environment values.
 
 Open `http://localhost:8000/docs` for the local API explorer.
 
 Login and sign-up are available at `http://localhost:3000/auth`. Development uses an HttpOnly,
 SameSite cookie; set `AUTH_COOKIE_SECURE=true` behind production HTTPS. Passwords are stored only as
-salted scrypt hashes. Profile preferences and verified order receipts remain account-scoped in the
-current browser for this MVP and are not sent to the shopping agent.
+salted scrypt hashes. Buyer memory, missions, tasks and orders are stored server-side and scoped
+to the signed-in account. Only enabled shopping preferences are supplied to mission research;
+phone/email are excluded. Old browser receipt caches are not treated as payment evidence.
+
+### Background checks and tracking
+
+- `JOURNEY_WORKER_ENABLED=true` starts the worker with the backend. It polls every 60 seconds;
+  watch conditions are normally checked every 15 minutes, with a manual **Check now** action.
+- Tasks persist and catch up after restart, but do not run while the backend is offline.
+- `JOURNEY_DEMO_FULFILLMENT=false` is the default. Set it to `true` only to rehearse explicitly
+  labelled shipment events for paid test orders.
+- `MERCHANT_FULFILLMENT_WEBHOOK_SECRET` enables signed merchant tracking updates. A real
+  merchant/carrier adapter must still supply those events; the secret alone is not an integration.
+- New journey tables are additive. Existing database content and local credentials are preserved.
 
 ## Deterministic commerce flow
 
 1. `POST /api/carts` reprices requested products from authoritative catalogue data.
-2. `POST /api/carts/{id}/freeze` rechecks price and stock, then creates a 15-minute SHA-256 cart hash.
+2. Buyer checkout confirms delivery and the payment offer, then `POST /api/carts/{id}/finalize`
+   rechecks price, stock and journey limits and creates a 15-minute SHA-256 cart hash.
 3. `POST /api/carts/{id}/approve` accepts only the exact, unexpired hash.
 4. `POST /api/orders` accepts only an approved cart and requires an idempotency key.
 5. Payment evidence is finalised internally only after signature, capture, provider order, amount, and currency checks.
@@ -134,6 +179,11 @@ The browser loads Razorpay Standard Checkout only after the buyer first locks th
 authoritative total and SHA-256 hash, and then clicks the separate exact-approval button. The secret
 keys never enter the browser; only the public test key ID is returned in the checkout configuration.
 
+If a provider response is lost, use **Recheck & reopen test checkout** on the prepared basket or
+**Recheck payment** in My Orders. Recovery uses the existing internal order and unique receipt.
+Incomplete/ambiguous provider lookups or unresolved payments block retry; a prepared order is
+never displayed as a verified payment.
+
 ## Agent-readable merchant
 
 NiyamCart publishes stable machine contracts for AI buyers:
@@ -141,6 +191,8 @@ NiyamCart publishes stable machine contracts for AI buyers:
 - `GET /.well-known/agent-catalog.json` — all 500 products with integer-paise prices, availability, attributes, compatibility tags, grounded complements, policy references, catalogue version, and ETag.
 - `GET /.well-known/agent-policy.json` — seven ordered allow/deny/escalate rules with IDs and explanations.
 - `POST /api/policy/evaluate` — deterministic evaluation of a proposed commerce action.
+- `GET /.well-known/buyer-commerce.json` — discovery for the custom quote-and-review contract.
+- `POST /api/buyer/quotes` — quote-only access through an account-issued temporary buyer key.
 - `merchant.yaml` — merchant identity, endpoints, limits, payment boundary, and the exact six supported agent actions.
 
 Both well-known endpoints support conditional requests through `If-None-Match` and return `304 Not Modified` when unchanged. Their JSON Schemas live in `backend/schemas/`.
@@ -148,7 +200,7 @@ Both well-known endpoints support conditional requests through `If-None-Match` a
 ## Bounded agent API
 
 - `POST /api/agent/sessions` runs a new request through at most eight model turns.
-- `POST /api/agent/sessions/{id}/messages` allows at most two buyer revisions.
+- `POST /api/agent/sessions/{id}/messages` enforces the configured buyer-revision limit.
 - `GET /api/agent/sessions/{id}/events` returns the reproducible public audit timeline.
 - `GET /api/audit/{scope}/{id}` recomputes and verifies the hash chain for an agent session, cart,
   or order.
@@ -160,9 +212,17 @@ failure—the endpoint falls back to deterministic catalog search, labels the re
 and never fabricates a cart. Model calls are additionally bounded by the configured step and cost
 limits.
 
-The only model-callable tools are catalog search, product details, compatible add-ons, policy
+Mission research uses at most three model turns with an eight-second timeout per provider request
+and no automatic SDK retries. Provider failures fall back to labelled catalogue results; interrupted
+planning becomes retryable after two minutes. The ordinary shopping assistant keeps its own
+configured step/cost limits, with a 15-second timeout per provider request.
+
+The shopping model's tools are catalog search, product details, compatible add-ons, policy
 lookup, proposed-cart creation, and human escalation. Order creation, approval, checkout, and
 payment are intentionally absent.
+
+The separate aftercare agent has four order-scoped tools: tracking, return options, receipt
+retrieval and support-draft preparation. Its answers are rendered from verified tool outcomes.
 
 ## Multilingual voice shopping
 
@@ -204,6 +264,10 @@ SIDs can be supplied later for production-style template delivery. See `docs/wha
 
 ## Verify
 
+Run Python commands below with the virtual environment activated, or use its Python executable
+directly as in the setup instructions. Tests use isolated databases and provider fixtures; passing
+them does not claim a live payment, carrier delivery or refund was performed.
+
 ```bash
 npm run lint
 npm run typecheck
@@ -214,6 +278,20 @@ python -m pytest backend/tests -q
 python scripts/security_check.py
 python scripts/check_links.py
 ```
+
+For a browser smoke test, sign in, save a mission, review its basket, create a qualifying watch,
+follow the update back to its basket, reload saved preferences, and inspect My Orders. Use Razorpay
+test mode for checkout. Confirm that no order is marked paid before independent verification.
+
+## Current integration limits
+
+- Razorpay **test mode only**; there is no autonomous payment authority.
+- Delivery dates are catalogue estimates, not carrier guarantees.
+- Returns/exchanges require merchant review; no live refund or replacement service is connected.
+- Replenishment and recovery prepare proposals, not recurring charges.
+- The external buyer contract is custom; it is not ACP/AP2/UAP/x402 certification.
+- The independent buyer reference client selects products deterministically; it is not a separate
+  autonomous model. The merchant's bounded shopping and aftercare agents are separate components.
 
 ## Project records
 
@@ -226,6 +304,7 @@ python scripts/check_links.py
 - `docs/evaluation-report.md` — measured results and explicitly unrun live arms.
 - `docs/limitations.md` — honest MVP and deployment constraints.
 - `docs/demo-script.md` — timed five-minute demonstration and rehearsal record.
+- `docs/buyer-journey.md` — persistent journey, worker, tracking contract, recovery and buyer demo.
 
 ## Safety boundary
 
